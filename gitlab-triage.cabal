@@ -27,7 +27,7 @@ executable gitlab-triage
   main-is:             Main.hs
   -- other-modules:
   -- other-extensions:
-  ghc-options: -threaded
+  ghc-options: -threaded -Wall
   build-depends:       base >=4.11
                      , gitlab-servant
                      , http-client-tls
@@ -44,6 +44,9 @@ executable gitlab-triage
                      , generic-lens
                      , cursor
                      , megaparsec
+                     , yaml
+                     , aeson
+                     , directory
   hs-source-dirs:      main
   default-language:    Haskell2010
 

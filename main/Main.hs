@@ -4,6 +4,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module Main where
 
 import GitLab.Tickets
@@ -11,22 +14,16 @@ import GitLab.Users
 import GitLab.Common
 
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Servant.Client
 
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import Network.HTTP.Client.TLS as TLS
-import Network.Connection (TLSSettings(..))
-import Network.HTTP.Types.Status
 import Data.Default
-import Servant.Client
 
 import Brick
+import Brick.Forms
 
-import Control.Lens
+import Control.Lens (view, ALens,  to, set, cloneLens)
 import Control.Monad (void)
 import Data.Maybe (fromMaybe)
 import qualified Graphics.Vty as V
@@ -41,7 +38,6 @@ import qualified Data.Vector as Vec
 import Brick.Types
   ( Widget
   )
-import Brick.Widgets.Core
 import Brick.Util (fg, on)
 
 import Data.Generics.Product
@@ -54,49 +50,86 @@ import Cursor.Text
 import Text.Megaparsec
 import Text.Megaparsec.Char.Lexer
 
+import Data.Yaml (ParseException, decodeFileEither, encodeFile)
+import Data.Aeson(ToJSON, FromJSON)
+import System.Directory
+
 
 
 tlsSettings :: TLSSettings
 tlsSettings = def { settingDisableCertificateValidation = False }
 
-gitlabBaseUrl = BaseUrl Https "gitlab.com" 443 ""
+gitlabBaseUrl :: String -> BaseUrl
+gitlabBaseUrl base = BaseUrl Https base 443 "api/v4"
 
-gitlabApiBaseUrl = gitlabBaseUrl { baseUrlPath = "api/v4" }
+--project = ProjectId 13083
 
-project = ProjectId 13083
+--listIssueNotes' token = listIssueNotes token Nothing project
 
-listIssueNotes' token = listIssueNotes token Nothing project
-
-data Name = IssueList | Notes | Footer deriving (Show, Ord, Generic, Eq)
+data Name = IssueList | Notes | Footer | FormArea T.Text
+              deriving (Show, Ord, Generic, Eq)
 
 main :: IO ()
 main = do
-  token <- AccessToken . T.strip <$> T.readFile "token"
+  conf <- readConfig
+  st <- selectInitialState conf
+  gui st
+
+data OperationalState = OperationalState {
+                            mode :: Mode
+                          , footerMode :: FooterMode
+                          , config :: AppConfig
+                          } deriving Generic
+
+data MajorMode = Setup (Form UserConfig () Name) | Operational OperationalState deriving Generic
+
+selectInitialState :: Either a UserConfig -> IO AppState
+selectInitialState e =
+  case e of
+    Left {} -> return setupState
+    Right c -> initialise c
+
+initialise :: UserConfig -> IO AppState
+initialise c = do
   mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
-  let env = mkClientEnv mgr gitlabApiBaseUrl
-  es_raw <- runClientM (getIssue token project) env
-  let es = either (error . show) id es_raw
-  gui (initialState env token es)
+  let env = mkClientEnv mgr
+              (gitlabBaseUrl (view (field @"url" . to T.unpack) c))
+      conf = (AppConfig c env)
 
+  es <- runQuery conf getIssue
+  let les = TicketListView (TicketList (L.list IssueList (Vec.fromList es) 1))
+      mm = Operational (OperationalState les FooterInfo conf)
+  return $ AppState mm
 
-
+setupState :: AppState
+setupState = AppState (Setup setupForm)
 
 drawUI :: AppState -> [Widget Name]
-drawUI l =
+drawUI (AppState a) = case a of
+                        Setup form -> drawSetup form
+                        Operational o -> drawMain o
+
+drawSetup :: Form UserConfig e Name -> [Widget Name]
+drawSetup form = [renderForm form]
+
+
+drawMain :: OperationalState -> [Widget Name]
+drawMain l =
     case view (field @"mode") l of
-      TicketList -> ticketListWidget l
+      TicketListView ts -> ticketListWidget l ts
       IssueView st -> issueViewWidget (view typed l) st
 
-ticketListWidget :: AppState -> [Widget Name]
-ticketListWidget l = [ui]
+ticketListWidget :: OperationalState -> TicketList -> [Widget Name]
+ticketListWidget l tl = [ui]
   where
-    label = str "Item " <+> cur <+> str " of " <+> total
-    cur = case (issues l) ^. (L.listSelectedL) of
+    issues = view (field @"issues") tl
+    boxLabel = str "Item " <+> cur <+> str " of " <+> total
+    cur = case view L.listSelectedL issues of
               Nothing -> str "-"
               Just i -> str (show (i + 1))
-    total = str $ show $ Vec.length $ (issues l) ^. (L.listElementsL)
-    box = B.borderWithLabel label $
-            L.renderList listDrawElement True (issues l)
+    total = str $ show $ Vec.length $ view L.listElementsL issues
+    box = B.borderWithLabel boxLabel $
+            L.renderList listDrawElement True issues
               <=>
             B.hBorder
               <=>
@@ -118,21 +151,23 @@ type Handler' s k =
 
 type Handler s = Handler' s s
 
-globalHandler ::  Handler AppState -> Handler AppState
+globalHandler ::  Handler OperationalState -> Handler OperationalState
 globalHandler k l re =
  case view typed l of
    FooterInfo -> infoFooterHandler k l re
    FooterGoto tc -> gotoFooterHandler tc k l re
 
-infoFooterHandler :: Handler AppState -> Handler AppState
+infoFooterHandler :: Handler OperationalState -> Handler OperationalState
 infoFooterHandler k l re@(T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.halt l
     V.EvKey (V.KChar 'g') [] ->
       M.continue (set typed (FooterGoto emptyTextCursor) l)
-    ev -> k l re
+    _ev -> k l re
+infoFooterHandler k l re = k l re
 
-gotoFooterHandler :: TextCursor -> Handler AppState -> Handler AppState
+gotoFooterHandler :: TextCursor -> Handler OperationalState
+                                -> Handler OperationalState
 gotoFooterHandler tc k l re@(T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.continue (resetFooter l)
@@ -143,33 +178,35 @@ gotoFooterHandler tc k l re@(T.VtyEvent e) =
           (liftIO $ loadOneIssue iid l) >>=
             M.continue . resetFooter
 
-    e ->
+    _ ->
       handleTextCursorEvent
-        (\tc -> k (set typed (FooterGoto tc) l) re)
+        (\tc' -> k (set typed (FooterGoto tc') l) re)
         tc re
+gotoFooterHandler _ k l re = k l re
 
-resetFooter :: AppState -> AppState
+resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
 
 
 checkGotoInput :: T.Text -> Maybe IssueIid
 checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
 
-loadOneIssue :: IssueIid -> AppState -> IO AppState
+loadOneIssue :: IssueIid -> OperationalState -> IO OperationalState
 loadOneIssue iid s = do
-  r <- runQuery s (getOneIssue iid)
+  r <- runQuery (view typed s) (getOneIssue iid)
   loadTicket r s
 
 
 
 
-ticketListHandler :: Handler AppState
-ticketListHandler l (T.VtyEvent e) =
+ticketListHandler :: TicketList -> Handler OperationalState
+ticketListHandler tl l (T.VtyEvent e) =
   case e of
-    V.EvKey V.KEnter [] -> ticketListEnter l
-    ev -> M.continue
-            =<< handleEventLensed l (field @"issues") L.handleListEvent ev
-ticketListHandler l _ = M.continue l
+    V.EvKey V.KEnter [] -> ticketListEnter tl l
+    _ -> do
+      res <- L.handleListEvent e (view typed tl)
+      M.continue (set typed (TicketListView (TicketList res)) l)
+ticketListHandler _ l _ = M.continue l
 
 issuePageHandler :: Handler IssuePage
 issuePageHandler l (T.VtyEvent e) =
@@ -178,12 +215,16 @@ issuePageHandler l (T.VtyEvent e) =
             =<< handleEventLensed l (field @"issueNotes") L.handleListEvent ev
 issuePageHandler l _ = M.continue l
 
-modeHandler :: Handler AppState
+modeHandler :: Handler OperationalState
 modeHandler l e =
   case view typed l of
-    IssueView tl -> liftHandler typed tl IssueView issuePageHandler l e
-    TicketList -> ticketListHandler l e
+    IssueView tl ->
+      liftHandler typed tl IssueView issuePageHandler l e
+    TicketListView tl -> ticketListHandler tl l e
 
+-- | liftHandler lifts a handler which only operates on its own state into
+-- a larger state. It won't work if the handler needs to modify something
+-- from a larger scope.
 liftHandler
   :: ALens s s a a -- The mode to modify
   -> c        -- Inner state
@@ -194,34 +235,57 @@ liftHandler l c i h st ev = do
   let update s = set (cloneLens l) (i s) st
   fmap update <$> h c ev
 
-appEvent :: Handler AppState
-appEvent =
+handleMain :: Handler OperationalState
+handleMain =
   globalHandler modeHandler
 
+setupHandler :: SetupForm -> Handler AppState
+setupHandler f _ e = do
+  f' <- handleFormEvent e f
+  case e of
+    T.VtyEvent (V.EvKey V.KEnter []) ->
+      if allFieldsValid f'
+        then do
+                let c = formState f'
+                liftIO $ writeConfig c
+                liftIO (initialise c) >>= M.continue
 
-ticketListEnter :: AppState -> T.EventM Name (T.Next AppState)
-ticketListEnter l = do
-  let cursorTicket = view (field @"issues" . to L.listSelectedElement) l
+        else M.continue (AppState (Setup f'))
+    _ -> M.continue (AppState (Setup f'))
+
+
+appEvent :: Handler AppState
+appEvent a@(AppState mm) ev = case mm of
+                              Setup f -> setupHandler f a ev
+                              Operational o ->
+                                liftHandler typed o Operational handleMain a ev
+
+
+
+ticketListEnter :: TicketList -> OperationalState -> T.EventM Name (T.Next OperationalState)
+ticketListEnter tl o = do
+  let cursorTicket = view (field @"issues" . to L.listSelectedElement) tl
   case cursorTicket of
-    Nothing -> M.continue l
+    Nothing -> M.continue o
     Just (_, t) ->
-      liftIO (loadTicket t l) >>=
+      liftIO (loadTicket t o) >>=
             M.continue
 
-setMode :: Mode -> AppState -> AppState
+setMode :: Mode -> OperationalState -> OperationalState
 setMode = set typed
 
-runQuery :: AppState -> (AccessToken -> ProjectId -> ClientM a) -> IO a
+runQuery :: AppConfig -> (AccessToken -> ProjectId -> ClientM a) -> IO a
 runQuery l q = do
-  let token   = view (field @"token") l
+  let tok   = view (field @"userConfig" . field @"token") l
       reqEnv  = view (field @"reqEnv") l
-  res <- runClientM (q token project) reqEnv
+      project = view (field @"userConfig" . field @"project") l
+  res <- runClientM (q tok project) reqEnv
   return (either (error . show) id res)
 
-loadTicket :: IssueResp -> AppState -> IO AppState
+loadTicket :: IssueResp -> OperationalState -> IO OperationalState
 loadTicket t l = do
   let iid = view (field @"irIid") t
-  es_n <- runQuery l (\t p -> listIssueNotes t Nothing p iid)
+  es_n <- runQuery (view typed l) (\t' p -> listIssueNotes t' Nothing p iid)
   return $
     set typed
         (IssueView (IssuePage (L.list Notes (Vec.fromList es_n) 1) t))
@@ -229,11 +293,8 @@ loadTicket t l = do
 
 
 listDrawElement :: Bool -> IssueResp -> Widget n
-listDrawElement sel IssueResp{..} =
-    let selStr s = if sel
-                   then withAttr customAttr (str $ "<" <> s <> ">")
-                   else str s
-    in vLimit 1 $ hBox
+listDrawElement _ IssueResp{..} =
+    vLimit 1 $ hBox
         [ hLimit 10 $ padRight Max $ int (unIssueIid irIid)
         , hLimit 50 $ padRight Max $ txt irTitle
         , padLeft (Pad 1) $ txt irState]
@@ -250,8 +311,6 @@ issuePage fm l =
 
     titleBox = boxLabel
                     <+> padRight (Pad 1) (txt ":") <+> (txtWrap irTitle)
-
-    padMeta = padRight Max . hLimitPercent 50
 
     metainfo1 = [
                   metaRow "author" (renderAuthor irAuthor)
@@ -271,7 +330,7 @@ issuePage fm l =
     notesSect =
       L.renderList (\_ -> renderNote) True notes
 
-
+footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
    FooterInfo -> txt "r - reload; g - goto"
@@ -292,20 +351,11 @@ renderNote i = vLimit 6 $ B.hBorder <=>
              , padLeft Max (renderDate (view (field @"inrCreatedAt") i)) ]
 
 metaRow :: T.Text -> Widget n -> Widget n
-metaRow label widget = vLimit 2 (B.hBorderWithLabel (txt label))
+metaRow metaLabel widget = vLimit 2 (B.hBorderWithLabel (txt metaLabel))
                                   <=>
                                   (vLimit 1 widget)
 
 
-initialState :: ClientEnv -> AccessToken -> [IssueResp]
-             -> AppState
-initialState env token es =
-  AppState {
-      mode = TicketList
-    , footerMode = FooterInfo
-    , issues = L.list IssueList (Vec.fromList es) 1
-    , reqEnv = env
-    , token  = token }
 
 customAttr :: A.AttrName
 customAttr = L.listSelectedAttr <> "custom"
@@ -317,21 +367,27 @@ theMap = A.attrMap V.defAttr
     , (customAttr,            fg V.cyan)
     ]
 
+data TicketList = TicketList {
+                    issues :: L.List Name IssueResp
+                    } deriving Generic
+
 data IssuePage = IssuePage {
                   issueNotes :: L.List Name IssueNoteResp,
                   currentIssue :: IssueResp
                   } deriving Generic
 
-data Mode = TicketList | IssueView IssuePage
+data Mode = TicketListView TicketList | IssueView IssuePage
 
 data FooterMode = FooterInfo | FooterGoto TextCursor deriving Generic
 
 
-data AppState = AppState { mode :: Mode
-                         , footerMode :: FooterMode
-                         , issues :: L.List Name IssueResp
-                         , reqEnv :: ClientEnv
-                         , token  :: AccessToken } deriving Generic
+data AppState = AppState { majorMode :: MajorMode
+                         } deriving Generic
+
+data AppConfig = AppConfig {
+                    userConfig :: UserConfig
+                  , reqEnv :: ClientEnv
+                  } deriving Generic
 
 theApp :: M.App AppState () Name
 theApp =
@@ -365,7 +421,7 @@ handleTextCursorEvent k tc e =
     case e of
         VtyEvent ve ->
             case ve of
-                V.EvKey key mods ->
+                V.EvKey key _mods ->
                     let mDo func = k . fromMaybe tc $ func tc
                     in case key of
                            V.KChar c -> mDo $ textCursorInsert c
@@ -378,3 +434,46 @@ handleTextCursorEvent k tc e =
                            _ -> k tc
                 _ -> k tc
         _ -> k tc
+
+
+
+
+data UserConfig = UserConfig
+      { token :: AccessToken
+      , url :: T.Text
+      , project :: ProjectId
+      } deriving (Generic, ToJSON, FromJSON)
+
+getConfigFile :: IO FilePath
+getConfigFile = getXdgDirectory XdgConfig ".gitlab-triager"
+
+
+readConfig :: IO (Either ParseException UserConfig)
+readConfig = do
+  configFile <- getConfigFile
+  decodeFileEither configFile
+
+writeConfig :: UserConfig -> IO ()
+writeConfig uc = do
+  configFile <- getConfigFile
+  encodeFile configFile uc
+
+type SetupForm = Form UserConfig () Name
+
+setupForm :: Form UserConfig e Name
+setupForm = newForm [ tokenField, urlField, projectField ]
+                    (UserConfig (AccessToken "") "" (ProjectId 0))
+
+  where
+    tokenField = editTextField (field @"token" . typed @T.Text)
+                               (FormArea "token")
+                               (Just 1)
+
+    urlField = editTextField (field @"url")
+                             (FormArea "url")
+                             (Just 1)
+
+
+    projectField = editShowableField (field @"project" . typed @Int)
+                                     (FormArea "project")
+

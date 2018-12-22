@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module GitLab.Common where
 
@@ -19,6 +20,7 @@ import Data.String
 import Data.Time.Clock
 import Servant.API
 import Servant.Client
+import GHC.Generics
 
 
 (.=?) :: ToJSON a => Text -> Maybe a -> Maybe Pair
@@ -32,7 +34,8 @@ newtype Weight = Weight Int
                deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
 
 newtype AccessToken = AccessToken Text
-                    deriving (Eq, Ord, Show, ToHttpApiData, IsString)
+                    deriving (Eq, Ord, Show, ToHttpApiData, IsString, Generic, ToJSON, FromJSON)
+
 
 newtype MilestoneId = MilestoneId Int
                     deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
@@ -41,7 +44,7 @@ newtype IssueLinkId = IssueLinkId Int
                     deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
 
 newtype ProjectId = ProjectId Int
-                  deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)
+                  deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData, Generic)
 
 newtype Labels = Labels (S.Set Text)
                deriving (Semigroup, Monoid, Show)
