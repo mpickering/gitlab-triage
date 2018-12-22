@@ -25,6 +25,7 @@ import Servant.Client
 import GitLab.Common
 import Control.Monad.IO.Class (liftIO)
 import GHC.Generics
+import GitLab.Users
 
 ----------------------------------------------------------------------
 -- getIssue
@@ -34,7 +35,7 @@ data IssueResp
     = IssueResp { irProjectId :: ProjectId
                 , irIid :: IssueIid
                 , irMilestone :: Maybe Milestone
-                , irAuthor :: Author
+                , irAuthor :: User
                 , irDescription :: Text
                 , irState :: Text
                 , irAssignees :: [Assignee]
@@ -45,11 +46,6 @@ data IssueResp
                 , irCreatedAt :: Text
                 }
     deriving (Show, Generic)
-
-data Author = Author deriving Show
-
-instance FromJSON Author where
-  parseJSON _ = return Author
 
 data Assignee = Assignee deriving Show
 
@@ -279,7 +275,7 @@ instance ToJSON CreateIssueNote where
 data IssueNoteResp
     = IssueNoteResp { inrId :: Int
                     , inrBody :: Text
-                    , inrAuthor :: Author
+                    , inrAuthor :: User
                     , inrCreatedAt :: Text
                     , inrUpdatedAt :: Text
                     , inrSystem :: Bool

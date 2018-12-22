@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module GitLab.Users where
 
@@ -23,6 +24,7 @@ import Data.Time.Clock
 import Servant.API
 import Servant.Client
 import GitLab.Common
+import GHC.Generics
 
 ----------------------------------------------------------------------
 -- createUser
@@ -50,7 +52,7 @@ data User = User { userId       :: UserId
                  , userName     :: Text
                  , userEmail    :: Maybe Text
                  }
-          deriving (Show)
+         deriving (Show, Generic)
 
 instance FromJSON User where
     parseJSON = withObject "user" $ \o -> do

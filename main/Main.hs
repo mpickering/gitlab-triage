@@ -6,6 +6,7 @@
 module Main where
 
 import GitLab.Tickets
+import GitLab.Users
 import GitLab.Common
 
 import qualified Data.Text as T
@@ -125,7 +126,7 @@ issuePage IssueResp{..} notes =
     padMeta = padRight Max . hLimitPercent 50
 
     metainfo1 = [
-                  metaRow "author" (showR irAuthor)
+                  metaRow "author" (renderAuthor irAuthor)
                 , metaRow "state" (txt irState) ]
 
     metainfo2 = metainfo1
@@ -146,6 +147,9 @@ issuePage IssueResp{..} notes =
 
     footer = vLimit 1 $ txt "r - reload"
 
+renderAuthor :: User -> Widget n
+renderAuthor  = txt . view (field @"userName")
+
 renderNote :: IssueNoteResp -> Widget n
 renderNote i = vLimit 6 $ B.hBorder <=>
                 (hBox [ noteMeta
@@ -154,8 +158,8 @@ renderNote i = vLimit 6 $ B.hBorder <=>
   where
     noteMeta =
       hLimitPercent 20 $
-        vBox [ padLeft Max (showR (view (field @"inrAuthor") i))
-             , renderDate (view (field @"inrCreatedAt") i) ]
+        vBox [ padLeft Max (renderAuthor (view (field @"inrAuthor") i))
+             , padLeft Max (renderDate (view (field @"inrCreatedAt") i)) ]
 
 metaRow :: T.Text -> Widget n -> Widget n
 metaRow label widget = vLimit 2 (B.hBorderWithLabel (txt label))
