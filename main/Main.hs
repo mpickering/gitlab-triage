@@ -140,11 +140,14 @@ issuePage IssueResp{..} notes =
 
 renderNote :: IssueNoteResp -> Widget ()
 renderNote i = B.hBorder <=>
-                (hBox [ hLimitPercent 20 $
-                         (showR (view (field @"inrAuthor") i))
-
+                (hBox [ noteMeta
                       , B.vBorder
                       , txtWrap (view (field @"inrBody") i)])
+  where
+    noteMeta =
+      hLimitPercent 20 $
+        vBox [ padLeft Max (showR (view (field @"inrAuthor") i))
+             , renderDate (view (field @"inrCreatedAt") i) ]
 
 metaRow :: T.Text -> Widget () -> Widget ()
 metaRow label widget = vLimit 2 (B.hBorderWithLabel (txt label))
@@ -193,3 +196,6 @@ int = str . show
 
 showR :: Show a => a -> Widget n
 showR = str . show
+
+renderDate :: T.Text -> Widget a
+renderDate = txt
