@@ -166,6 +166,16 @@ getIssue :: AccessToken -> ProjectId -> ClientM [IssueResp]
 getIssue tok prj =
     client (Proxy :: Proxy GetIssueAPI) (Just tok) prj (Just "all")
 
+type GetOneIssueAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "issues"
+    :> Capture "iid" IssueIid
+    :> Get '[JSON] IssueResp
+
+getOneIssue :: IssueIid -> AccessToken -> ProjectId -> ClientM IssueResp
+getOneIssue iid tok prj =
+  client (Proxy :: Proxy GetOneIssueAPI) (Just tok) prj iid
+
 ----------------------------------------------------------------------
 -- createIssue
 ----------------------------------------------------------------------

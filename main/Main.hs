@@ -49,6 +49,11 @@ import GHC.Generics (Generic)
 
 import Control.Monad.IO.Class (liftIO)
 
+import Cursor.Text
+
+import Text.Megaparsec
+import Text.Megaparsec.Char.Lexer
+
 
 
 tlsSettings :: TLSSettings
@@ -62,11 +67,11 @@ project = ProjectId 13083
 
 listIssueNotes' token = listIssueNotes token Nothing project
 
-data Name = IssueList | Notes deriving (Show, Ord, Generic, Eq)
+data Name = IssueList | Notes | Footer deriving (Show, Ord, Generic, Eq)
 
 main :: IO ()
 main = do
-  token <- AccessToken <$> T.readFile "token"
+  token <- AccessToken . T.strip <$> T.readFile "token"
   mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
   let env = mkClientEnv mgr gitlabApiBaseUrl
   es_raw <- runClientM (getIssue token project) env
@@ -80,7 +85,7 @@ drawUI :: AppState -> [Widget Name]
 drawUI l =
     case view (field @"mode") l of
       TicketList -> ticketListWidget l
-      IssueView st -> issueViewWidget st
+      IssueView st -> issueViewWidget (view typed l) st
 
 ticketListWidget :: AppState -> [Widget Name]
 ticketListWidget l = [ui]
@@ -92,25 +97,71 @@ ticketListWidget l = [ui]
     total = str $ show $ Vec.length $ (issues l) ^. (L.listElementsL)
     box = B.borderWithLabel label $
             L.renderList listDrawElement True (issues l)
+              <=>
+            B.hBorder
+              <=>
+            footer (view typed l)
+
     ui = C.vCenter $ vBox [ C.hCenter box
                           ]
 
 errorPage :: Widget n -> Widget n
 errorPage reason = str "Error: " <+> reason
 
-issueViewWidget :: IssuePage -> [Widget Name]
-issueViewWidget l = [issuePage l]
+issueViewWidget :: FooterMode -> IssuePage -> [Widget Name]
+issueViewWidget fm l = [issuePage fm l]
 
-type Handler s =
+type Handler' s k =
   s
   -> T.BrickEvent Name ()
-  -> T.EventM Name (T.Next s)
+  -> T.EventM Name (T.Next k)
 
-globalHandler ::  Handler s -> Handler s
-globalHandler k l re@(T.VtyEvent e) =
-    case e of
-        V.EvKey V.KEsc [] -> M.halt l
-        ev -> k l re
+type Handler s = Handler' s s
+
+globalHandler ::  Handler AppState -> Handler AppState
+globalHandler k l re =
+ case view typed l of
+   FooterInfo -> infoFooterHandler k l re
+   FooterGoto tc -> gotoFooterHandler tc k l re
+
+infoFooterHandler :: Handler AppState -> Handler AppState
+infoFooterHandler k l re@(T.VtyEvent e) =
+  case e of
+    V.EvKey V.KEsc [] -> M.halt l
+    V.EvKey (V.KChar 'g') [] ->
+      M.continue (set typed (FooterGoto emptyTextCursor) l)
+    ev -> k l re
+
+gotoFooterHandler :: TextCursor -> Handler AppState -> Handler AppState
+gotoFooterHandler tc k l re@(T.VtyEvent e) =
+  case e of
+    V.EvKey V.KEsc [] -> M.continue (resetFooter l)
+    V.EvKey V.KEnter [] ->
+      case checkGotoInput (rebuildTextCursor tc) of
+        Nothing -> M.continue (resetFooter l)
+        Just iid -> do
+          (liftIO $ loadOneIssue iid l) >>=
+            M.continue . resetFooter
+
+    e ->
+      handleTextCursorEvent
+        (\tc -> k (set typed (FooterGoto tc) l) re)
+        tc re
+
+resetFooter :: AppState -> AppState
+resetFooter l = (set typed FooterInfo l)
+
+
+checkGotoInput :: T.Text -> Maybe IssueIid
+checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
+
+loadOneIssue :: IssueIid -> AppState -> IO AppState
+loadOneIssue iid s = do
+  r <- runQuery s (getOneIssue iid)
+  loadTicket r s
+
+
+
 
 ticketListHandler :: Handler AppState
 ticketListHandler l (T.VtyEvent e) =
@@ -160,14 +211,17 @@ ticketListEnter l = do
 setMode :: Mode -> AppState -> AppState
 setMode = set typed
 
+runQuery :: AppState -> (AccessToken -> ProjectId -> ClientM a) -> IO a
+runQuery l q = do
+  let token   = view (field @"token") l
+      reqEnv  = view (field @"reqEnv") l
+  res <- runClientM (q token project) reqEnv
+  return (either (error . show) id res)
+
 loadTicket :: IssueResp -> AppState -> IO AppState
 loadTicket t l = do
   let iid = view (field @"irIid") t
-      token   = view (field @"token") l
-      reqEnv  = view (field @"reqEnv") l
-  es_n_raw <-
-    runClientM (listIssueNotes token Nothing project iid) reqEnv
-  let es_n = either (error . show) id es_n_raw
+  es_n <- runQuery l (\t p -> listIssueNotes t Nothing p iid)
   return $
     set typed
         (IssueView (IssuePage (L.list Notes (Vec.fromList es_n) 1) t))
@@ -184,12 +238,13 @@ listDrawElement sel IssueResp{..} =
         , hLimit 50 $ padRight Max $ txt irTitle
         , padLeft (Pad 1) $ txt irState]
 
-issuePage :: IssuePage -> Widget Name
-issuePage l =
-  joinBorders $ B.border (vBox [metainfo, desc, notesSect, B.hBorder, footer])
+issuePage :: FooterMode -> IssuePage -> Widget Name
+issuePage fm l =
+  joinBorders $ B.border (vBox [metainfo, desc, notesSect
+                               , B.hBorder, footer fm])
   where
     IssueResp{..} = view typed l
-    notes    = view typed l
+    notes    = view (field @"issueNotes") l
 
     boxLabel = int (unIssueIid irIid)
 
@@ -209,7 +264,6 @@ issuePage l =
              ,  hBox [ vBox metainfo1
                      , vLimit (length metainfo1 * 2) B.vBorder
                      , vBox metainfo2]
-             ,  B.hBorder
              ]
 
     desc = (txtWrap irDescription)
@@ -218,7 +272,10 @@ issuePage l =
       L.renderList (\_ -> renderNote) True notes
 
 
-    footer = vLimit 1 $ txt "r - reload"
+footer m = vLimit 1 $
+ case m of
+   FooterInfo -> txt "r - reload; g - goto"
+   FooterGoto t -> txt "g: " <+> drawTextCursor t
 
 renderAuthor :: User -> Widget n
 renderAuthor  = txt . view (field @"userName")
@@ -245,6 +302,7 @@ initialState :: ClientEnv -> AccessToken -> [IssueResp]
 initialState env token es =
   AppState {
       mode = TicketList
+    , footerMode = FooterInfo
     , issues = L.list IssueList (Vec.fromList es) 1
     , reqEnv = env
     , token  = token }
@@ -266,10 +324,12 @@ data IssuePage = IssuePage {
 
 data Mode = TicketList | IssueView IssuePage
 
+data FooterMode = FooterInfo | FooterGoto TextCursor deriving Generic
+
 
 data AppState = AppState { mode :: Mode
+                         , footerMode :: FooterMode
                          , issues :: L.List Name IssueResp
-                         -- Populated on demand
                          , reqEnv :: ClientEnv
                          , token  :: AccessToken } deriving Generic
 
@@ -293,3 +353,28 @@ showR = str . show
 
 renderDate :: T.Text -> Widget a
 renderDate = txt
+
+drawTextCursor :: TextCursor -> Widget Name
+drawTextCursor tc =
+  showCursor Footer (Location (textCursorIndex tc, 0))
+    $ txt (rebuildTextCursor tc)
+
+handleTextCursorEvent :: (TextCursor -> EventM Name (Next k))
+                      -> Handler' TextCursor k
+handleTextCursorEvent k tc e =
+    case e of
+        VtyEvent ve ->
+            case ve of
+                V.EvKey key mods ->
+                    let mDo func = k . fromMaybe tc $ func tc
+                    in case key of
+                           V.KChar c -> mDo $ textCursorInsert c
+                           V.KLeft -> mDo textCursorSelectPrev
+                           V.KRight -> mDo textCursorSelectNext
+                           V.KBS -> mDo textCursorRemove
+                           V.KHome -> k $ textCursorSelectStart tc
+                           V.KEnd -> k $ textCursorSelectEnd tc
+                           V.KDel -> mDo textCursorDelete
+                           _ -> k tc
+                _ -> k tc
+        _ -> k tc

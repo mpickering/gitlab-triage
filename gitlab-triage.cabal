@@ -28,7 +28,7 @@ executable gitlab-triage
   -- other-modules:
   -- other-extensions:
   ghc-options: -threaded
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.11
                      , gitlab-servant
                      , http-client-tls
                      , http-types
@@ -38,12 +38,12 @@ executable gitlab-triage
                      , connection
                      , data-default
                      , brick >= 0.40
-                     , reflex-brick
-                     , reflex
                      , lens
                      , vector
                      , vty
                      , generic-lens
+                     , cursor
+                     , megaparsec
   hs-source-dirs:      main
   default-language:    Haskell2010
 
