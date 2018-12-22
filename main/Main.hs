@@ -59,6 +59,8 @@ project = ProjectId 13083
 
 listIssueNotes' token = listIssueNotes token Nothing project
 
+data Name = IssueList | Notes deriving (Show, Ord, Generic, Eq)
+
 main :: IO ()
 main = do
   token <- AccessToken <$> T.readFile "token"
@@ -73,7 +75,7 @@ main = do
 
 
 
-drawUI :: AppState -> [Widget ()]
+drawUI :: AppState -> [Widget Name]
 drawUI l = [ui']
     where
         label = str "Item " <+> cur <+> str " of " <+> total
@@ -88,16 +90,20 @@ drawUI l = [ui']
 
         ui' = issuePage (L.listElements (issues l) Vec.! 0) (issueNotes l)
 
-appEvent :: AppState -> T.BrickEvent () e -> T.EventM () (T.Next AppState)
+appEvent :: AppState -> T.BrickEvent Name e -> T.EventM Name (T.Next AppState)
 appEvent l (T.VtyEvent e) =
     case e of
         V.EvKey V.KEsc [] -> M.halt l
 
-        ev -> M.continue . (\b -> set (field @"issues") b l)
-                =<< L.handleListEvent ev (view (field @"issues") l)
+        ev -> do
+          i' <- L.handleListEvent ev (view (field @"issues") l)
+          in' <- L.handleListEvent ev (view (field @"issueNotes") l)
+          M.continue (set (field @"issues") i'
+                     . set (field @"issueNotes") in'
+                     $ l)
 appEvent l _ = M.continue l
 
-listDrawElement :: Bool -> IssueResp -> Widget ()
+listDrawElement :: Bool -> IssueResp -> Widget n
 listDrawElement sel IssueResp{..} =
     let selStr s = if sel
                    then withAttr customAttr (str $ "<" <> s <> ">")
@@ -107,7 +113,7 @@ listDrawElement sel IssueResp{..} =
         , hLimit 50 $ padRight Max $ txt irTitle
         , padLeft (Pad 1) $ txt irState]
 
-issuePage :: IssueResp -> [IssueNoteResp] -> Widget ()
+issuePage :: IssueResp -> L.List Name IssueNoteResp -> Widget Name
 issuePage IssueResp{..} notes =
   joinBorders $ B.border (vBox [metainfo, desc, notesSect, B.hBorder, footer])
   where
@@ -134,12 +140,14 @@ issuePage IssueResp{..} notes =
 
     desc = (txtWrap irDescription)
 
-    notesSect = vBox (map renderNote notes)
+    notesSect =
+      L.renderList (\_ -> renderNote) True notes
+
 
     footer = vLimit 1 $ txt "r - reload"
 
-renderNote :: IssueNoteResp -> Widget ()
-renderNote i = B.hBorder <=>
+renderNote :: IssueNoteResp -> Widget n
+renderNote i = vLimit 6 $ B.hBorder <=>
                 (hBox [ noteMeta
                       , B.vBorder
                       , txtWrap (view (field @"inrBody") i)])
@@ -149,7 +157,7 @@ renderNote i = B.hBorder <=>
         vBox [ padLeft Max (showR (view (field @"inrAuthor") i))
              , renderDate (view (field @"inrCreatedAt") i) ]
 
-metaRow :: T.Text -> Widget () -> Widget ()
+metaRow :: T.Text -> Widget n -> Widget n
 metaRow label widget = vLimit 2 (B.hBorderWithLabel (txt label))
                                   <=>
                                   (vLimit 1 widget)
@@ -159,8 +167,8 @@ initialState :: ClientEnv -> AccessToken -> [IssueResp]
              -> [IssueNoteResp] -> AppState
 initialState env token es es_n =
   AppState {
-      issues = L.list () (Vec.fromList es) 1
-    , issueNotes = es_n
+      issues = L.list IssueList (Vec.fromList es) 1
+    , issueNotes = L.list Notes (Vec.fromList es_n) 1
     , reqEnv = env
     , token  = token }
 
@@ -174,12 +182,12 @@ theMap = A.attrMap V.defAttr
     , (customAttr,            fg V.cyan)
     ]
 
-data AppState = AppState { issues :: L.List () IssueResp
-                         , issueNotes :: [IssueNoteResp]
+data AppState = AppState { issues :: L.List Name IssueResp
+                         , issueNotes :: L.List Name IssueNoteResp
                          , reqEnv :: ClientEnv
                          , token  :: AccessToken } deriving Generic
 
-theApp :: M.App AppState e ()
+theApp :: M.App AppState e Name
 theApp =
     M.App { M.appDraw = drawUI
           , M.appChooseCursor = M.showFirstCursor
