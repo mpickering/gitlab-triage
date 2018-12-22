@@ -26,7 +26,7 @@ import Servant.Client
 
 import Brick
 
-import Lens.Micro
+import Control.Lens
 import Control.Monad (void)
 import Data.Maybe (fromMaybe)
 import qualified Graphics.Vty as V
@@ -49,8 +49,6 @@ import GHC.Generics (Generic)
 
 import Control.Monad.IO.Class (liftIO)
 
-
-view = flip (^.)
 
 
 tlsSettings :: TLSSettings
@@ -82,7 +80,7 @@ drawUI :: AppState -> [Widget Name]
 drawUI l =
     case view (field @"mode") l of
       TicketList -> ticketListWidget l
-      IssueView  -> issueViewWidget (view typed l)
+      IssueView st -> issueViewWidget st
 
 ticketListWidget :: AppState -> [Widget Name]
 ticketListWidget l = [ui]
@@ -100,36 +98,55 @@ ticketListWidget l = [ui]
 errorPage :: Widget n -> Widget n
 errorPage reason = str "Error: " <+> reason
 
-issueViewWidget :: Maybe IssuePage -> [Widget Name]
-issueViewWidget l =
-  case l of
-    Nothing -> [errorPage (str "IssuePage was empty")]
-    Just p  -> [issuePage p]
+issueViewWidget :: IssuePage -> [Widget Name]
+issueViewWidget l = [issuePage l]
 
-appEvent :: AppState -> T.BrickEvent Name e -> T.EventM Name (T.Next AppState)
-appEvent l (T.VtyEvent e) =
+type Handler s =
+  s
+  -> T.BrickEvent Name ()
+  -> T.EventM Name (T.Next s)
+
+globalHandler ::  Handler s -> Handler s
+globalHandler k l re@(T.VtyEvent e) =
     case e of
         V.EvKey V.KEsc [] -> M.halt l
+        ev -> k l re
 
-        V.EvKey V.KEnter [] ->
-          case view (field @"mode") l of
-            TicketList -> ticketListEnter l
-            IssueView  -> M.continue l
+ticketListHandler :: Handler AppState
+ticketListHandler l (T.VtyEvent e) =
+  case e of
+    V.EvKey V.KEnter [] -> ticketListEnter l
+    ev -> M.continue
+            =<< handleEventLensed l (field @"issues") L.handleListEvent ev
+ticketListHandler l _ = M.continue l
 
-        ev -> do
-          i' <- L.handleListEvent ev (view (field @"issues") l)
-          (l' :: AppState)
-              <- case (view (field @"issuePageState") l) of
-                   Nothing -> return l
-                   Just xs -> do
-                    in' <- L.handleListEvent ev (view (field @"issueNotes") xs)
-                    return $ set (field @"issuePageState"
-                                 . mapped
-                                 . field @"issueNotes")
-                                 in' l
+issuePageHandler :: Handler IssuePage
+issuePageHandler l (T.VtyEvent e) =
+  case e of
+    ev -> M.continue
+            =<< handleEventLensed l (field @"issueNotes") L.handleListEvent ev
+issuePageHandler l _ = M.continue l
 
-          M.continue (set (field @"issues") i' l')
-appEvent l _ = M.continue l
+modeHandler :: Handler AppState
+modeHandler l e =
+  case view typed l of
+    IssueView tl -> liftHandler typed tl IssueView issuePageHandler l e
+    TicketList -> ticketListHandler l e
+
+liftHandler
+  :: ALens s s a a -- The mode to modify
+  -> c        -- Inner state
+  -> (c -> a) -- How to inject the new state
+  -> Handler c -- Handler for inner state
+  -> Handler s
+liftHandler l c i h st ev = do
+  let update s = set (cloneLens l) (i s) st
+  fmap update <$> h c ev
+
+appEvent :: Handler AppState
+appEvent =
+  globalHandler modeHandler
+
 
 ticketListEnter :: AppState -> T.EventM Name (T.Next AppState)
 ticketListEnter l = do
@@ -138,7 +155,7 @@ ticketListEnter l = do
     Nothing -> M.continue l
     Just (_, t) ->
       liftIO (loadTicket t l) >>=
-            M.continue . set typed IssueView
+            M.continue
 
 setMode :: Mode -> AppState -> AppState
 setMode = set typed
@@ -153,7 +170,7 @@ loadTicket t l = do
   let es_n = either (error . show) id es_n_raw
   return $
     set typed
-        (Just (IssuePage (L.list Notes (Vec.fromList es_n) 1) t))
+        (IssueView (IssuePage (L.list Notes (Vec.fromList es_n) 1) t))
         l
 
 
@@ -229,7 +246,6 @@ initialState env token es =
   AppState {
       mode = TicketList
     , issues = L.list IssueList (Vec.fromList es) 1
-    , issuePageState = Nothing
     , reqEnv = env
     , token  = token }
 
@@ -248,17 +264,16 @@ data IssuePage = IssuePage {
                   currentIssue :: IssueResp
                   } deriving Generic
 
-data Mode = TicketList | IssueView
+data Mode = TicketList | IssueView IssuePage
 
 
 data AppState = AppState { mode :: Mode
                          , issues :: L.List Name IssueResp
                          -- Populated on demand
-                         , issuePageState :: Maybe IssuePage
                          , reqEnv :: ClientEnv
                          , token  :: AccessToken } deriving Generic
 
-theApp :: M.App AppState e Name
+theApp :: M.App AppState () Name
 theApp =
     M.App { M.appDraw = drawUI
           , M.appChooseCursor = M.showFirstCursor

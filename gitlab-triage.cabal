@@ -40,7 +40,7 @@ executable gitlab-triage
                      , brick >= 0.40
                      , reflex-brick
                      , reflex
-                     , microlens
+                     , lens
                      , vector
                      , vty
                      , generic-lens
