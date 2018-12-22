@@ -17,6 +17,7 @@ let
       reflex-brick = self.callPackage reflex-brick-source {};
       brick = self.callHackage "brick" "0.40" {};
       vty = self.callHackage "vty" "5.23.1" {};
+      generic-lens = pkgs.haskell.lib.dontCheck super.generic-lens;
     };
   };
 

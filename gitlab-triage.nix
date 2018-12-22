@@ -1,6 +1,6 @@
 { mkDerivation, aeson, base, bytestring, containers, directory
 , exceptions, http-client-tls, http-types, mtl, process, servant
-, servant-client, stdenv, text, time, connection, data-default, reflex, reflex-brick, brick, microlens, vector, vty
+, servant-client, stdenv, text, time, connection, data-default, reflex, reflex-brick, brick, microlens, vector, vty, generic-lens
 }:
 mkDerivation {
   pname = "gitlab-triage";
@@ -14,7 +14,7 @@ mkDerivation {
   ];
   executableHaskellDepends = [
     base http-client-tls http-types servant servant-client text connection data-default
-    reflex reflex-brick brick microlens vector vty
+    reflex reflex-brick brick microlens vector vty generic-lens
   ];
   doHaddock = false;
   license = stdenv.lib.licenses.bsd3;

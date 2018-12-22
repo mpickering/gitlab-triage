@@ -1,5 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 module Main where
 
 import GitLab.Tickets
@@ -21,7 +24,7 @@ import Servant.Client
 
 import Brick
 
-import Lens.Micro ((^.))
+import Lens.Micro
 import Control.Monad (void)
 import Data.Maybe (fromMaybe)
 import qualified Graphics.Vty as V
@@ -38,6 +41,11 @@ import Brick.Types
   )
 import Brick.Widgets.Core
 import Brick.Util (fg, on)
+
+import Data.Generics.Product
+import GHC.Generics
+
+view = flip (^.)
 
 
 tlsSettings :: TLSSettings
@@ -85,7 +93,8 @@ appEvent l (T.VtyEvent e) =
     case e of
         V.EvKey V.KEsc [] -> M.halt l
 
-        ev -> M.continue . undefined =<< L.handleListEvent ev (issues l)
+        ev -> M.continue . (\b -> set (field @"issues") b l)
+                =<< L.handleListEvent ev (view (field @"issues") l)
 appEvent l _ = M.continue l
 
 listDrawElement :: Bool -> IssueResp -> Widget ()
@@ -161,7 +170,7 @@ theMap = A.attrMap V.defAttr
 data AppState = AppState { issues :: L.List () IssueResp
                          , issueNotes :: [IssueNoteResp]
                          , reqEnv :: ClientEnv
-                         , token  :: AccessToken }
+                         , token  :: AccessToken } deriving Generic
 
 theApp :: M.App AppState e ()
 theApp =
