@@ -109,7 +109,7 @@ listDrawElement sel IssueResp{..} =
 
 issuePage :: IssueResp -> [IssueNoteResp] -> Widget ()
 issuePage IssueResp{..} notes =
-  B.border (vBox [metainfo, desc, notesSect, B.hBorder, footer])
+  joinBorders $ B.border (vBox [metainfo, desc, notesSect, B.hBorder, footer])
   where
     boxLabel = int (unIssueIid irIid)
 
@@ -125,7 +125,6 @@ issuePage IssueResp{..} notes =
     metainfo2 = metainfo1
 
     metainfo =
-      joinBorders $
         vBox [  titleBox
              ,  hBox [ vBox metainfo1
                      , vLimit (length metainfo1 * 2) B.vBorder
@@ -140,7 +139,12 @@ issuePage IssueResp{..} notes =
     footer = vLimit 1 $ txt "r - reload"
 
 renderNote :: IssueNoteResp -> Widget ()
-renderNote i = B.hBorder <=> showR i
+renderNote i = B.hBorder <=>
+                (hBox [ hLimitPercent 20 $
+                         (showR (view (field @"inrAuthor") i))
+
+                      , B.vBorder
+                      , txtWrap (view (field @"inrBody") i)])
 
 metaRow :: T.Text -> Widget () -> Widget ()
 metaRow label widget = vLimit 2 (B.hBorderWithLabel (txt label))

@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module GitLab.Tickets where
 
@@ -23,6 +24,7 @@ import Servant.API
 import Servant.Client
 import GitLab.Common
 import Control.Monad.IO.Class (liftIO)
+import GHC.Generics
 
 ----------------------------------------------------------------------
 -- getIssue
@@ -42,7 +44,7 @@ data IssueResp
                 , irClosedAt :: Maybe Text
                 , irCreatedAt :: Text
                 }
-    deriving (Show)
+    deriving (Show, Generic)
 
 data Author = Author deriving Show
 
@@ -276,12 +278,22 @@ instance ToJSON CreateIssueNote where
 
 data IssueNoteResp
     = IssueNoteResp { inrId :: Int
+                    , inrBody :: Text
+                    , inrAuthor :: Author
+                    , inrCreatedAt :: Text
+                    , inrUpdatedAt :: Text
+                    , inrSystem :: Bool
                     }
-    deriving (Show)
+    deriving (Show, Generic)
 
 instance FromJSON IssueNoteResp where
     parseJSON = withObject "issue note response" $ \o ->
       IssueNoteResp <$> o .: "id"
+                    <*> o .: "body"
+                    <*> o .: "author"
+                    <*> o .: "created_at"
+                    <*> o .: "updated_at"
+                    <*> o .: "system"
 
 type CreateIssueNoteAPI =
     GitLabRoot :> "projects"
