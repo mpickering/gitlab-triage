@@ -23,7 +23,7 @@ import Data.Default
 import Brick hiding (continue, halt)
 import Brick.Forms
 
-import Control.Lens (view, ALens,  to, set, cloneLens)
+import Control.Lens (view, ALens,  to, set, cloneLens, Traversal')
 import Control.Monad (void, when)
 import Data.Maybe (fromMaybe)
 import qualified Graphics.Vty as V
@@ -41,6 +41,7 @@ import Brick.Types
 import Brick.Util (fg, on)
 
 import Data.Generics.Product
+import Data.Generics.Sum
 import GHC.Generics (Generic)
 
 import Control.Monad.IO.Class (liftIO)
@@ -186,34 +187,56 @@ globalHandler ::  Handler OperationalState -> Handler OperationalState
 globalHandler k l re =
  case view typed l of
    FooterInfo -> infoFooterHandler k l re
-   FooterGoto tc -> gotoFooterHandler tc k l re
+   FooterInput m tc -> inputFooterHandler m tc k l re
 
 infoFooterHandler :: Handler OperationalState -> Handler OperationalState
 infoFooterHandler k l re@(T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.halt l
     V.EvKey (V.KChar 'g') [] ->
-      M.continue (set typed (FooterGoto emptyTextCursor) l)
+      M.continue (set typed (FooterInput Goto emptyTextCursor) l)
+    V.EvKey (V.KFun 2) [] ->
+      M.continue (set typed (FooterInput Title emptyTextCursor) l)
     _ev -> k l re
 infoFooterHandler k l re = k l re
 
-gotoFooterHandler :: TextCursor -> Handler OperationalState
-                                -> Handler OperationalState
-gotoFooterHandler tc k l re@(T.VtyEvent e) =
+inputFooterHandler :: FooterInputMode
+                   -> TextCursor
+                   -> Handler OperationalState
+                   -> Handler OperationalState
+inputFooterHandler m tc k l re@(T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.continue (resetFooter l)
     V.EvKey V.KEnter [] ->
-      case checkGotoInput (rebuildTextCursor tc) of
-        Nothing -> M.continue (resetFooter l)
-        Just iid -> do
-          (liftIO $ loadOneIssue iid (view typed l)) >>=
-            M.continue . resetFooter . issueView l
+      dispatchFooterInput m tc l
 
     _ ->
       handleTextCursorEvent
-        (\tc' -> k (set typed (FooterGoto tc') l) re)
+        (\tc' -> k (set typed (FooterInput m tc') l) re)
         tc re
-gotoFooterHandler _ k l re = k l re
+inputFooterHandler _ _ k l re = k l re
+
+-- | What happens when we press enter in footer input mode
+dispatchFooterInput :: FooterInputMode
+                    -> TextCursor
+                    -> OperationalState
+                    -> EventM n (Next OperationalState)
+dispatchFooterInput Goto tc l =
+  case checkGotoInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just iid -> do
+      (liftIO $ loadOneIssue iid (view typed l)) >>=
+        M.continue . resetFooter . issueView l
+dispatchFooterInput Title tc l =
+  case checkTitleInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just t -> do
+      M.continue $ set (issueEdit . field @"eiTitle") (Just t) (resetFooter l)
+
+
+issueEdit :: Traversal' OperationalState EditIssue
+issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates"
+
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
@@ -224,6 +247,10 @@ issueView l n = set (field @"mode") (IssueView n) l
 
 checkGotoInput :: T.Text -> Maybe IssueIid
 checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
+
+checkTitleInput :: T.Text -> Maybe T.Text
+checkTitleInput "" = Nothing
+checkTitleInput t  = Just t
 
 loadOneIssue :: IssueIid -> AppConfig -> IO IssuePage
 loadOneIssue iid ac = do
@@ -242,19 +269,30 @@ ticketListHandler tl l (T.VtyEvent e) =
       M.continue (set typed (TicketListView (TicketList res)) l)
 ticketListHandler _ l _ = M.continue l
 
-issuePageHandler :: HandlerR IssuePage
-issuePageHandler l (T.VtyEvent e) =
+
+-- Events which operate only on internal state
+internalIssuePageHandler :: HandlerR IssuePage
+internalIssuePageHandler l (T.VtyEvent e) =
   case e of
     V.EvKey (V.KFun 1) [] ->
       let statusEvent =
             toggleStatus (view (typed @IssueResp . field @"irState") l)
       in continue
           (set (typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
+
     V.EvKey (V.KFun 10) [] ->
       applyChanges l
     ev -> continue
             =<< lift (handleEventLensed l (field @"issueNotes") L.handleListEvent ev)
-issuePageHandler l _ = continue l
+internalIssuePageHandler l _ = continue l
+
+-- | Events which change the mode
+issuePageHandler :: IssuePage -> Handler OperationalState
+issuePageHandler tl l e =
+  case e of
+    _ ->
+      liftHandler typed tl IssueView
+        (demote (view typed l) internalIssuePageHandler) l e
 
 toggleStatus :: T.Text -> StatusEvent
 toggleStatus "closed" = ReopenEvent
@@ -275,9 +313,7 @@ demote ac h a e = runReaderT (h a e) ac
 modeHandler :: Handler OperationalState
 modeHandler l e =
   case view typed l of
-    IssueView tl ->
-      liftHandler typed tl IssueView
-        (demote (view typed l) issuePageHandler) l e
+    IssueView tl -> issuePageHandler tl l e
     TicketListView tl -> ticketListHandler tl l e
 
 -- | liftHandler lifts a handler which only operates on its own state into
@@ -394,13 +430,20 @@ renderUpdates e@EditIssue{..} =
   if nullEditIssue e
     then emptyWidget
     else vBox
-           $ B.hBorder : [txt "Status set to: " <+> showR eiStatus]
+           $ B.hBorder :
+            [txt "Status set to: " <+> showR eiStatus
+            , txt "Title set to: " <+> showR eiTitle ]
 
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
-   FooterInfo -> txt "r - reload; g - goto; F1 - open/close; F10 - Apply changes"
-   FooterGoto t -> txt "g: " <+> drawTextCursor t
+   FooterInfo -> txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
+   FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
+
+formatFooterMode :: FooterInputMode -> T.Text
+formatFooterMode m = case m of
+                       Goto -> "g: "
+                       Title -> "title: "
 
 renderAuthor :: User -> Widget n
 renderAuthor  = txt . view (field @"userName")
@@ -451,9 +494,11 @@ data IssuePage = IssuePage {
                   , updates :: EditIssue
                   } deriving Generic
 
-data Mode = TicketListView TicketList | IssueView IssuePage
+data Mode = TicketListView TicketList | IssueView IssuePage deriving Generic
 
-data FooterMode = FooterInfo | FooterGoto TextCursor deriving Generic
+data FooterInputMode = Goto | Title
+
+data FooterMode = FooterInfo | FooterInput FooterInputMode TextCursor deriving Generic
 
 
 data AppState = AppState { majorMode :: MajorMode
