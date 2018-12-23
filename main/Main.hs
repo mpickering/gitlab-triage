@@ -296,6 +296,8 @@ internalIssuePageHandler l (T.VtyEvent e) =
           (set (typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
     V.EvKey (V.KFun 3) [] ->
       newCommentHandler l
+    V.EvKey (V.KFun 4) [] ->
+      editDescriptionHandler l
 
     V.EvKey (V.KFun 10) [] ->
       applyChanges l
@@ -303,11 +305,25 @@ internalIssuePageHandler l (T.VtyEvent e) =
             =<< lift (handleEventLensed l (field @"issueNotes") L.handleListEvent ev)
 internalIssuePageHandler l _ = continue l
 
+editDescriptionHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
+editDescriptionHandler ip = do
+  let desc = view (typed @IssueResp . field @"irDescription") ip
+  lift $ invokeExternalEditor (Just desc) (postCommentAndUpdate ip)
+  where
+    postCommentAndUpdate :: IssuePage -> Maybe T.Text -> IO IssuePage
+    postCommentAndUpdate ip' t =
+      case t of
+        Nothing -> return ip'
+        Just "" -> return ip'
+        Just descText  -> do
+          return $
+            (set (typed @EditIssue . field @"eiDescription") (Just descText) ip)
 
+-- TODO: Should this be queued like the other events?
 newCommentHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 newCommentHandler ip = do
   ac <- ask
-  lift $ invokeExternalEditor (postCommentAndUpdate ac ip)
+  lift $ invokeExternalEditor Nothing (postCommentAndUpdate ac ip)
   where
     postCommentAndUpdate :: AppConfig -> IssuePage -> Maybe T.Text -> IO IssuePage
     postCommentAndUpdate ac ip' t =
@@ -488,7 +504,7 @@ footer m = vLimit 1 $
    FooterInfo ->
     txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
     <+>
-    txt "; F3 - comment"
+    txt "; F3 - comment; F4 - description"
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 formatFooterMode :: FooterInputMode -> T.Text
@@ -676,8 +692,11 @@ setupForm = newForm fields
 
 
 -- Copied from matterhorn
-invokeExternalEditor :: (Maybe T.Text -> IO s) -> EventM n (Next s)
-invokeExternalEditor k = do
+invokeExternalEditor
+  :: Maybe T.Text
+  -> (Maybe T.Text -> IO s)
+  -> EventM n (Next s)
+invokeExternalEditor initialText k = do
     -- If EDITOR is in the environment, write the current message to a
     -- temp file, invoke EDITOR on it, read the result, remove the temp
     -- file, and update the program state.
@@ -688,10 +707,12 @@ invokeExternalEditor k = do
 
     suspendAndResume $ do
       Sys.withSystemTempFile "gitlab-triage.tmp" $ \tmpFileName tmpFileHandle -> do
-        -- Write the current message to the temp file
-        --Sys.hPutStr tmpFileHandle $ T.unpack $ T.intercalate "\n" $
-        --    getEditContents $ st^.csEditState.cedEditor
-        Sys.hClose tmpFileHandle
+--         Write the current message to the temp file
+        case initialText of
+          Nothing -> return ()
+          Just t -> do
+                       Sys.hPutStr tmpFileHandle $ T.unpack $ t
+                       Sys.hClose tmpFileHandle
 
         -- Run the editor
         status <- Sys.system (editorProgram <> " " <> tmpFileName)
