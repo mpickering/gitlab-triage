@@ -50,7 +50,7 @@ newtype Labels = Labels (S.Set Text)
                deriving (Semigroup, Monoid, Show)
 
 data StatusEvent = CloseEvent | ReopenEvent
-                 deriving (Show)
+                 deriving (Show, Generic)
 
 instance ToJSON StatusEvent where
     toJSON CloseEvent  = "close"

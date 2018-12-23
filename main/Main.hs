@@ -20,7 +20,7 @@ import Servant.Client
 
 import Data.Default
 
-import Brick
+import Brick hiding (continue, halt)
 import Brick.Forms
 
 import Control.Lens (view, ALens,  to, set, cloneLens)
@@ -53,6 +53,8 @@ import Text.Megaparsec.Char.Lexer
 import Data.Yaml (ParseException, decodeFileEither, encodeFile)
 import Data.Aeson(ToJSON, FromJSON)
 import System.Directory
+
+import Control.Monad.Reader
 
 
 
@@ -133,7 +135,7 @@ drawMain :: OperationalState -> [Widget Name]
 drawMain l =
     case view (field @"mode") l of
       TicketListView ts -> ticketListWidget l ts
-      IssueView st -> issueViewWidget (view typed l) st
+      IssueView st -> issueViewWidget (view (typed @FooterMode) l) st
 
 ticketListWidget :: OperationalState -> TicketList -> [Widget Name]
 ticketListWidget l tl = [ui]
@@ -165,7 +167,20 @@ type Handler' s k =
   -> T.BrickEvent Name ()
   -> T.EventM Name (T.Next k)
 
+type HandlerR' s k =
+  s
+  -> T.BrickEvent Name ()
+  -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+
 type Handler s = Handler' s s
+
+type HandlerR s = HandlerR' s s
+
+halt :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+halt = lift . M.halt
+
+continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+continue = lift . M.continue
 
 globalHandler ::  Handler OperationalState -> Handler OperationalState
 globalHandler k l re =
@@ -191,8 +206,8 @@ gotoFooterHandler tc k l re@(T.VtyEvent e) =
       case checkGotoInput (rebuildTextCursor tc) of
         Nothing -> M.continue (resetFooter l)
         Just iid -> do
-          (liftIO $ loadOneIssue iid l) >>=
-            M.continue . resetFooter
+          (liftIO $ loadOneIssue iid (view typed l)) >>=
+            M.continue . resetFooter . issueView l
 
     _ ->
       handleTextCursorEvent
@@ -203,14 +218,17 @@ gotoFooterHandler _ k l re = k l re
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
 
+issueView :: OperationalState -> IssuePage -> OperationalState
+issueView l n = set (field @"mode") (IssueView n) l
+
 
 checkGotoInput :: T.Text -> Maybe IssueIid
 checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
 
-loadOneIssue :: IssueIid -> OperationalState -> IO OperationalState
-loadOneIssue iid s = do
-  r <- runQuery (view typed s) (getOneIssue iid)
-  loadTicket r s
+loadOneIssue :: IssueIid -> AppConfig -> IO IssuePage
+loadOneIssue iid ac = do
+  r <- runQuery ac (getOneIssue iid)
+  loadTicket r ac
 
 
 
@@ -224,18 +242,42 @@ ticketListHandler tl l (T.VtyEvent e) =
       M.continue (set typed (TicketListView (TicketList res)) l)
 ticketListHandler _ l _ = M.continue l
 
-issuePageHandler :: Handler IssuePage
+issuePageHandler :: HandlerR IssuePage
 issuePageHandler l (T.VtyEvent e) =
   case e of
-    ev -> M.continue
-            =<< handleEventLensed l (field @"issueNotes") L.handleListEvent ev
-issuePageHandler l _ = M.continue l
+    V.EvKey (V.KFun 1) [] ->
+      let statusEvent =
+            toggleStatus (view (typed @IssueResp . field @"irState") l)
+      in continue
+          (set (typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
+    V.EvKey (V.KFun 10) [] ->
+      applyChanges l
+    ev -> continue
+            =<< lift (handleEventLensed l (field @"issueNotes") L.handleListEvent ev)
+issuePageHandler l _ = continue l
+
+toggleStatus :: T.Text -> StatusEvent
+toggleStatus "closed" = ReopenEvent
+toggleStatus "opened" = CloseEvent
+toggleStatus s = error $ "Not Handled:" ++ show s
+
+applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
+applyChanges ip = do
+  let iid = view (typed @IssueResp  . field @"irIid") ip
+      ei  = view (typed @EditIssue) ip
+  ac <- ask
+  ir <- liftIO $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei)
+  liftIO (loadTicket ir ac) >>= continue
+
+demote :: AppConfig -> HandlerR a -> Handler a
+demote ac h a e = runReaderT (h a e) ac
 
 modeHandler :: Handler OperationalState
 modeHandler l e =
   case view typed l of
     IssueView tl ->
-      liftHandler typed tl IssueView issuePageHandler l e
+      liftHandler typed tl IssueView
+        (demote (view typed l) issuePageHandler) l e
     TicketListView tl -> ticketListHandler tl l e
 
 -- | liftHandler lifts a handler which only operates on its own state into
@@ -286,8 +328,8 @@ ticketListEnter tl o = do
   case cursorTicket of
     Nothing -> M.continue o
     Just (_, t) ->
-      liftIO (loadTicket t o) >>=
-            M.continue
+      liftIO (loadTicket t (view (typed @AppConfig) o)) >>=
+            M.continue . issueView o
 
 setMode :: Mode -> OperationalState -> OperationalState
 setMode = set typed
@@ -300,14 +342,11 @@ runQuery l q = do
   res <- runClientM (q tok project) reqEnv
   return (either (error . show) id res)
 
-loadTicket :: IssueResp -> OperationalState -> IO OperationalState
+loadTicket :: IssueResp -> AppConfig -> IO IssuePage
 loadTicket t l = do
   let iid = view (field @"irIid") t
-  es_n <- runQuery (view typed l) (\t' p -> listIssueNotes t' Nothing p iid)
-  return $
-    set typed
-        (IssueView (IssuePage (L.list Notes (Vec.fromList es_n) 1) t))
-        l
+  es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
+  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 1) t noEdits)
 
 
 listDrawElement :: Bool -> IssueResp -> Widget n
@@ -320,7 +359,7 @@ listDrawElement _ IssueResp{..} =
 issuePage :: FooterMode -> IssuePage -> Widget Name
 issuePage fm l =
   joinBorders $ B.border (vBox [metainfo, desc, notesSect
-                               , B.hBorder, footer fm])
+                               , updateLog, B.hBorder, footer fm])
   where
     IssueResp{..} = view typed l
     notes    = view (field @"issueNotes") l
@@ -343,15 +382,24 @@ issuePage fm l =
                      , vBox metainfo2]
              ]
 
+    updateLog = renderUpdates (view (field @"updates") l)
+
     desc = (txtWrap irDescription)
 
     notesSect =
       L.renderList renderNote True notes
 
+renderUpdates :: EditIssue -> Widget Name
+renderUpdates e@EditIssue{..} =
+  if nullEditIssue e
+    then emptyWidget
+    else vBox
+           $ B.hBorder : [txt "Status set to: " <+> showR eiStatus]
+
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
-   FooterInfo -> txt "r - reload; g - goto"
+   FooterInfo -> txt "r - reload; g - goto; F1 - open/close; F10 - Apply changes"
    FooterGoto t -> txt "g: " <+> drawTextCursor t
 
 renderAuthor :: User -> Widget n
@@ -398,8 +446,9 @@ data TicketList = TicketList {
                     } deriving Generic
 
 data IssuePage = IssuePage {
-                  issueNotes :: L.List Name IssueNoteResp,
-                  currentIssue :: IssueResp
+                  issueNotes :: L.List Name IssueNoteResp
+                  , currentIssue :: IssueResp
+                  , updates :: EditIssue
                   } deriving Generic
 
 data Mode = TicketListView TicketList | IssueView IssuePage

@@ -231,7 +231,11 @@ data EditIssue
                 , eiAssignees   :: Maybe [UserId]
                 , eiKeywords    :: Maybe [Text]
                 }
-    deriving (Show)
+    deriving (Show, Generic)
+
+noEdits :: EditIssue
+noEdits = EditIssue Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+                    Nothing Nothing
 
 instance ToJSON EditIssue where
     toJSON EditIssue{..} = object
