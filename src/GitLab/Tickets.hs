@@ -38,7 +38,7 @@ data IssueResp
                 , irAuthor :: User
                 , irDescription :: Text
                 , irState :: Text
-                , irAssignees :: [Assignee]
+                , irAssignees :: [User]
                 , irLabels :: [Text]
                 , irTitle :: Text
                 , irUpdatedAt :: Text

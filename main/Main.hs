@@ -66,6 +66,8 @@ import qualified System.Process as Sys
 
 import qualified Data.ByteString as BS
 
+import Data.List
+
 
 
 tlsSettings :: TLSSettings
@@ -194,7 +196,10 @@ continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
 continue = lift . M.continue
 
 globalHandler ::  Handler OperationalState -> Handler OperationalState
-globalHandler k l re =
+globalHandler k l re = do
+ case re of
+   T.VtyEvent (V.EvResize {}) -> invalidateCache
+   _ -> return ()
  case view typed l of
    FooterInfo -> infoFooterHandler k l re
    FooterInput m tc -> inputFooterHandler m tc k l re
@@ -438,15 +443,19 @@ issuePage fm l =
 
     metainfo1 = [
                   metaRow "author" (renderAuthor irAuthor)
-                , metaRow "state" (txt irState) ]
+                , metaRow "state" (txt irState)
+                , metaRow "Created" (txt irCreatedAt) ]
 
-    metainfo2 = metainfo1
+    metainfo2 = [ metaRow "Owner" (renderOwners irAssignees)
+                , metaRow "Labels" (renderLabels irLabels)
+                , metaRow "Updated" (txt irUpdatedAt) ]
 
-    metainfo = cached (Metainfo irIid) $
+    metainfo = cached (Metainfo irIid) $ joinBorders $
         vBox [  titleBox
              ,  hBox [ vBox metainfo1
                      , vLimit (length metainfo1 * 2) B.vBorder
                      , vBox metainfo2]
+             , B.hBorder
              ]
 
     updateLog = renderUpdates (view (field @"updates") l)
@@ -455,6 +464,14 @@ issuePage fm l =
 
     notesSect =
       L.renderList renderNote True notes
+
+renderOwners :: [User] -> Widget n
+renderOwners [] = txt " "
+renderOwners us = hBox (intersperse (txt ", ") (map renderAuthor us))
+
+renderLabels :: [T.Text] -> Widget n
+renderLabels [] = txt " "
+renderLabels us = hBox (intersperse (txt ", ") (map txt us))
 
 renderUpdates :: EditIssue -> Widget Name
 renderUpdates e@EditIssue{..} =
