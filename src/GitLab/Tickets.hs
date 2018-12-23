@@ -378,7 +378,7 @@ listIssueNotes :: AccessToken
                -> IssueIid
                -> ClientM [IssueNoteResp]
 listIssueNotes tok sudo proj iis =
-  go 0
+  go 1
   where
     go n = do
       notes <- listIssueNotesPage tok sudo proj iis n
