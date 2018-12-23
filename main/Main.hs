@@ -24,7 +24,7 @@ import Brick
 import Brick.Forms
 
 import Control.Lens (view, ALens,  to, set, cloneLens)
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Data.Maybe (fromMaybe)
 import qualified Graphics.Vty as V
 
@@ -71,6 +71,7 @@ data Name = IssueList | Notes | Footer | FormArea T.Text
 
 main :: IO ()
 main = do
+  deleteConfig
   conf <- readConfig
   st <- selectInitialState conf
   gui st
@@ -80,13 +81,14 @@ data OperationalState = OperationalState {
                           , footerMode :: FooterMode
                           , config :: AppConfig
                           } deriving Generic
-
-data MajorMode = Setup (Form UserConfig () Name) | Operational OperationalState deriving Generic
+-- TODO: Make a separte SetupState type
+data MajorMode = Setup (Form UserConfig () Name) FilePath
+               | Operational OperationalState deriving Generic
 
 selectInitialState :: Either a UserConfig -> IO AppState
 selectInitialState e =
   case e of
-    Left {} -> return setupState
+    Left {} -> setupState
     Right c -> initialise c
 
 initialise :: UserConfig -> IO AppState
@@ -101,16 +103,30 @@ initialise c = do
       mm = Operational (OperationalState les FooterInfo conf)
   return $ AppState mm
 
-setupState :: AppState
-setupState = AppState (Setup setupForm)
+setupState :: IO AppState
+setupState = do
+  configFile <- getConfigFile
+  return $ AppState (Setup setupForm configFile)
 
 drawUI :: AppState -> [Widget Name]
 drawUI (AppState a) = case a of
-                        Setup form -> drawSetup form
+                        Setup form cfg -> drawSetup form cfg
                         Operational o -> drawMain o
 
-drawSetup :: Form UserConfig e Name -> [Widget Name]
-drawSetup form = [renderForm form]
+drawSetup :: Form UserConfig e Name -> FilePath -> [Widget Name]
+drawSetup form cfg = [ui, background]
+  where
+    background = fill '@'
+    formBox = C.center . joinBorders
+       . B.border . hLimitPercent 75 . vLimit 5 $ renderForm form
+
+    ui = formBox <=> fileFooter <=> setupFooter
+
+    fileFooter = txt "Config will be written to: " <+> str cfg
+
+    setupFooter =
+      vLimit 1 $
+        txt "esc - quit; tab - next field; enter - submit"
 
 
 drawMain :: OperationalState -> [Widget Name]
@@ -239,9 +255,10 @@ handleMain :: Handler OperationalState
 handleMain =
   globalHandler modeHandler
 
-setupHandler :: SetupForm -> Handler AppState
-setupHandler f _ e = do
+setupHandler :: SetupForm -> FilePath -> Handler AppState
+setupHandler f cfg _ e = do
   f' <- handleFormEvent e f
+  let s' = AppState (Setup f' cfg)
   case e of
     T.VtyEvent (V.EvKey V.KEnter []) ->
       if allFieldsValid f'
@@ -250,13 +267,14 @@ setupHandler f _ e = do
                 liftIO $ writeConfig c
                 liftIO (initialise c) >>= M.continue
 
-        else M.continue (AppState (Setup f'))
-    _ -> M.continue (AppState (Setup f'))
+        else M.continue s'
+    T.VtyEvent (V.EvKey V.KEsc []) -> M.halt s'
+    _ -> M.continue s'
 
 
 appEvent :: Handler AppState
 appEvent a@(AppState mm) ev = case mm of
-                              Setup f -> setupHandler f a ev
+                              Setup f cfg -> setupHandler f cfg a ev
                               Operational o ->
                                 liftHandler typed o Operational handleMain a ev
 
@@ -365,6 +383,8 @@ theMap = A.attrMap V.defAttr
     [ (L.listAttr,            V.white `on` V.blue)
     , (L.listSelectedAttr,    V.blue `on` V.white)
     , (customAttr,            fg V.cyan)
+    , (invalidFormInputAttr, V.white `on` V.red)
+    , (focusedFormInputAttr, V.black `on` V.yellow)
     ]
 
 data TicketList = TicketList {
@@ -451,23 +471,45 @@ getConfigFile = getXdgDirectory XdgConfig ".gitlab-triager"
 readConfig :: IO (Either ParseException UserConfig)
 readConfig = do
   configFile <- getConfigFile
+--  putStrLn $ "Reading config from: " ++ configFile
   decodeFileEither configFile
 
 writeConfig :: UserConfig -> IO ()
 writeConfig uc = do
   configFile <- getConfigFile
+--  putStrLn $ "Writing config to: " ++ configFile
   encodeFile configFile uc
+
+deleteConfig :: IO ()
+deleteConfig = do
+  configFile <- getConfigFile
+  exists <- doesFileExist configFile
+--  putStrLn $ "Removing config: " ++ configFile
+  when exists (removeFile configFile)
 
 type SetupForm = Form UserConfig () Name
 
+-- TODO: Set invalid input style
 setupForm :: Form UserConfig e Name
-setupForm = newForm [ tokenField, urlField, projectField ]
-                    (UserConfig (AccessToken "") "" (ProjectId 0))
+setupForm = newForm fields
+                    (UserConfig (AccessToken "")
+                                "gitlab.com"
+                                (ProjectId 13083))
 
   where
-    tokenField = editTextField (field @"token" . typed @T.Text)
-                               (FormArea "token")
-                               (Just 1)
+    fields = [ row "Token" tokenField
+             , row "Base URL" urlField
+             , row "Project ID" projectField ]
+
+    row s w = vLimit 1 . ((hLimit 11 $ padLeft Max $ txt s) <+> B.vBorder <+>) @@= w
+
+    tokenField = editField (field @"token" . typed @T.Text)
+                           (FormArea "token")
+                           (Just 1)
+                           id
+                           validateToken
+                           (txt . T.intercalate "\n")
+                           id
 
     urlField = editTextField (field @"url")
                              (FormArea "url")
@@ -476,4 +518,8 @@ setupForm = newForm [ tokenField, urlField, projectField ]
 
     projectField = editShowableField (field @"project" . typed @Int)
                                      (FormArea "project")
+
+    validateToken :: [T.Text] -> Maybe T.Text
+    validateToken [t] = if T.length t == 20 then Just t else Nothing
+    validateToken _   = Nothing
 
