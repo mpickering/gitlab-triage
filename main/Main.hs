@@ -494,7 +494,7 @@ renderNote _ i =
              , padLeft Max (renderDate (view (field @"inrCreatedAt") i)) ]
 
     -- Stop the border rendering in the selection
-    ignoreSel = forceAttr "default"
+    ignoreSel = forceAttr L.listAttr
 
 
 metaRow :: T.Text -> Widget n -> Widget n
