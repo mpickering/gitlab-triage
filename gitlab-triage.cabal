@@ -48,6 +48,9 @@ executable gitlab-triage
                      , aeson
                      , directory
                      , mtl
+                     , temporary
+                     , process
+                     , bytestring
   hs-source-dirs:      main
   default-language:    Haskell2010
 

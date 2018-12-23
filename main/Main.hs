@@ -14,6 +14,7 @@ import GitLab.Users
 import GitLab.Common
 
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Servant.Client
@@ -56,6 +57,14 @@ import Data.Aeson(ToJSON, FromJSON)
 import System.Directory
 
 import Control.Monad.Reader
+
+import qualified System.Environment as Sys
+import qualified System.Exit as Sys
+import qualified System.IO as Sys
+import qualified System.IO.Temp as Sys
+import qualified System.Process as Sys
+
+import qualified Data.ByteString as BS
 
 
 
@@ -279,12 +288,33 @@ internalIssuePageHandler l (T.VtyEvent e) =
             toggleStatus (view (typed @IssueResp . field @"irState") l)
       in continue
           (set (typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
+    V.EvKey (V.KFun 3) [] ->
+      newCommentHandler l
 
     V.EvKey (V.KFun 10) [] ->
       applyChanges l
     ev -> continue
             =<< lift (handleEventLensed l (field @"issueNotes") L.handleListEvent ev)
 internalIssuePageHandler l _ = continue l
+
+
+newCommentHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
+newCommentHandler ip = do
+  ac <- ask
+  lift $ invokeExternalEditor (postCommentAndUpdate ac ip)
+  where
+    postCommentAndUpdate :: AppConfig -> IssuePage -> Maybe T.Text -> IO IssuePage
+    postCommentAndUpdate ac ip' t =
+      case t of
+        Nothing -> return ip'
+        Just "" -> return ip'
+        Just commentText  -> do
+          let iid = view (typed @IssueResp . field @"irIid") ip'
+              note = CreateIssueNote commentText Nothing
+          _ <- runQuery ac (\tok p -> createIssueNote tok Nothing p iid note)
+          loadOneIssue iid ac
+
+
 
 -- | Events which change the mode
 issuePageHandler :: IssuePage -> Handler OperationalState
@@ -437,7 +467,10 @@ renderUpdates e@EditIssue{..} =
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
-   FooterInfo -> txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
+   FooterInfo ->
+    txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
+    <+>
+    txt "; F3 - comment"
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 formatFooterMode :: FooterInputMode -> T.Text
@@ -623,3 +656,35 @@ setupForm = newForm fields
     validateToken [t] = if T.length t == 20 then Just t else Nothing
     validateToken _   = Nothing
 
+
+-- Copied from matterhorn
+invokeExternalEditor :: (Maybe T.Text -> IO s) -> EventM n (Next s)
+invokeExternalEditor k = do
+    -- If EDITOR is in the environment, write the current message to a
+    -- temp file, invoke EDITOR on it, read the result, remove the temp
+    -- file, and update the program state.
+    --
+    -- If EDITOR is not present, fall back to 'vi'.
+    mEnv <- liftIO $ Sys.lookupEnv "EDITOR"
+    let editorProgram = maybe "vi" id mEnv
+
+    suspendAndResume $ do
+      Sys.withSystemTempFile "gitlab-triage.tmp" $ \tmpFileName tmpFileHandle -> do
+        -- Write the current message to the temp file
+        --Sys.hPutStr tmpFileHandle $ T.unpack $ T.intercalate "\n" $
+        --    getEditContents $ st^.csEditState.cedEditor
+        Sys.hClose tmpFileHandle
+
+        -- Run the editor
+        status <- Sys.system (editorProgram <> " " <> tmpFileName)
+
+        -- On editor exit, if exited with zero status, read temp file.
+        -- If non-zero status, skip temp file read.
+        case status of
+            Sys.ExitSuccess -> do
+                tmpBytes <- BS.readFile tmpFileName
+                case T.decodeUtf8' tmpBytes of
+                    Left _ -> do
+                        error "Failed to decode file contents as UTF-8"
+                    Right t -> k (Just t)
+            Sys.ExitFailure _ -> k Nothing
