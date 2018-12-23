@@ -11,3 +11,23 @@ Features
 * Advanced ticket querying along multiple axis
 * Search refinement
 
+TODO
+
+1. Implement remaining ticket edit options
+  * milestone - unsure about the format here
+  * labels    - need to lookup labels but they are just text
+      *  https://docs.gitlab.com/ee/api/labels.html
+    - Need to implement autocomplete widget really
+  * weight  -- Just an Int
+  * owners - Need to lookup user to get ID -- findUserByUsername
+
+2. Ticket filtering
+  * State
+  * label
+  * milestone
+  * author
+  * owner
+  * weight
+  * sorting
+  * search
+
