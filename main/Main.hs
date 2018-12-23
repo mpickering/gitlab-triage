@@ -79,6 +79,7 @@ gitlabBaseUrl base = BaseUrl Https base 443 "api/v4"
 --listIssueNotes' token = listIssueNotes token Nothing project
 
 data Name = IssueList | Notes | Footer | FormArea T.Text | Note (Bool, Int)
+          | Metainfo IssueIid
               deriving (Show, Ord, Generic, Eq)
 
 main :: IO ()
@@ -441,7 +442,7 @@ issuePage fm l =
 
     metainfo2 = metainfo1
 
-    metainfo =
+    metainfo = cached (Metainfo irIid) $
         vBox [  titleBox
              ,  hBox [ vBox metainfo1
                      , vLimit (length metainfo1 * 2) B.vBorder
