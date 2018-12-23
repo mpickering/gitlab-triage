@@ -27,7 +27,7 @@ executable gitlab-triage
   main-is:             Main.hs
   -- other-modules:
   -- other-extensions:
-  ghc-options: -threaded -Wall
+  ghc-options: -threaded -Wall -O2
   build-depends:       base >=4.11
                      , gitlab-servant
                      , http-client-tls

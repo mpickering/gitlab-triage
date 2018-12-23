@@ -413,7 +413,7 @@ loadTicket :: IssueResp -> AppConfig -> IO IssuePage
 loadTicket t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
-  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 1) t noEdits)
+  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t noEdits)
 
 
 listDrawElement :: Bool -> IssueResp -> Widget n
@@ -425,8 +425,8 @@ listDrawElement _ IssueResp{..} =
 
 issuePage :: FooterMode -> IssuePage -> Widget Name
 issuePage fm l =
-  joinBorders $ B.border (vBox [metainfo, desc, notesSect
-                               , updateLog, B.hBorder, footer fm])
+  B.border (vBox [metainfo, desc, notesSect
+                 , updateLog, B.hBorder, footer fm])
   where
     IssueResp{..} = view typed l
     notes    = view (field @"issueNotes") l
