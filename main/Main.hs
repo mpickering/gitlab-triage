@@ -78,7 +78,7 @@ gitlabBaseUrl base = BaseUrl Https base 443 "api/v4"
 
 --listIssueNotes' token = listIssueNotes token Nothing project
 
-data Name = IssueList | Notes | Footer | FormArea T.Text
+data Name = IssueList | Notes | Footer | FormArea T.Text | Note (Bool, Int)
               deriving (Show, Ord, Generic, Eq)
 
 main :: IO ()
@@ -481,8 +481,8 @@ formatFooterMode m = case m of
 renderAuthor :: User -> Widget n
 renderAuthor  = txt . view (field @"userName")
 
-renderNote :: Bool -> IssueNoteResp -> Widget n
-renderNote _ i =
+renderNote :: Bool -> IssueNoteResp -> Widget Name
+renderNote sel i = cached (Note (sel, view (field @"inrId") i)) $
       vLimit 6 $ ignoreSel B.hBorder <=>
                   (hBox [ noteMeta
                         , B.vBorder
