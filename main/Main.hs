@@ -71,7 +71,7 @@ data Name = IssueList | Notes | Footer | FormArea T.Text
 
 main :: IO ()
 main = do
-  deleteConfig
+  --deleteConfig
   conf <- readConfig
   st <- selectInitialState conf
   gui st
@@ -313,8 +313,8 @@ loadTicket t l = do
 listDrawElement :: Bool -> IssueResp -> Widget n
 listDrawElement _ IssueResp{..} =
     vLimit 1 $ hBox
-        [ hLimit 10 $ padRight Max $ int (unIssueIid irIid)
-        , hLimit 50 $ padRight Max $ txt irTitle
+        [ hLimit 6 $ padRight Max $ int (unIssueIid irIid)
+        , padRight Max $ txt irTitle
         , padLeft (Pad 1) $ txt irState]
 
 issuePage :: FooterMode -> IssuePage -> Widget Name
