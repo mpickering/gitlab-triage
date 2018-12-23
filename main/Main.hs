@@ -346,7 +346,7 @@ issuePage fm l =
     desc = (txtWrap irDescription)
 
     notesSect =
-      L.renderList (\_ -> renderNote) True notes
+      L.renderList renderNote True notes
 
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
@@ -357,16 +357,21 @@ footer m = vLimit 1 $
 renderAuthor :: User -> Widget n
 renderAuthor  = txt . view (field @"userName")
 
-renderNote :: IssueNoteResp -> Widget n
-renderNote i = vLimit 6 $ B.hBorder <=>
-                (hBox [ noteMeta
-                      , B.vBorder
-                      , txtWrap (view (field @"inrBody") i)])
+renderNote :: Bool -> IssueNoteResp -> Widget n
+renderNote _ i =
+      vLimit 6 $ ignoreSel B.hBorder <=>
+                  (hBox [ noteMeta
+                        , B.vBorder
+                        , txtWrap (view (field @"inrBody") i)])
   where
     noteMeta =
       hLimitPercent 20 $
         vBox [ padLeft Max (renderAuthor (view (field @"inrAuthor") i))
              , padLeft Max (renderDate (view (field @"inrCreatedAt") i)) ]
+
+    -- Stop the border rendering in the selection
+    ignoreSel = forceAttr "default"
+
 
 metaRow :: T.Text -> Widget n -> Widget n
 metaRow metaLabel widget = vLimit 2 (B.hBorderWithLabel (txt metaLabel))
@@ -378,13 +383,14 @@ metaRow metaLabel widget = vLimit 2 (B.hBorderWithLabel (txt metaLabel))
 customAttr :: A.AttrName
 customAttr = L.listSelectedAttr <> "custom"
 
-theMap :: A.AttrMap
-theMap = A.attrMap V.defAttr
+theMap :: AppState -> A.AttrMap
+theMap _ = A.attrMap V.defAttr
     [ (L.listAttr,            V.white `on` V.blue)
     , (L.listSelectedAttr,    V.blue `on` V.white)
     , (customAttr,            fg V.cyan)
     , (invalidFormInputAttr, V.white `on` V.red)
     , (focusedFormInputAttr, V.black `on` V.yellow)
+    , ("default", V.defAttr )
     ]
 
 data TicketList = TicketList {
@@ -415,7 +421,7 @@ theApp =
           , M.appChooseCursor = M.showFirstCursor
           , M.appHandleEvent = appEvent
           , M.appStartEvent = return
-          , M.appAttrMap = const theMap
+          , M.appAttrMap = theMap
           }
 
 gui :: AppState -> IO ()
