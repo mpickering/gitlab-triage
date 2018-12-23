@@ -26,7 +26,7 @@ import Brick.Forms
 
 import Control.Lens (view, ALens,  to, set, cloneLens, Traversal')
 import Control.Monad (void, when)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -490,13 +490,24 @@ renderLabels [] = txt " "
 renderLabels us = hBox (intersperse (txt ", ") (map txt us))
 
 renderUpdates :: EditIssue -> Widget Name
-renderUpdates e@EditIssue{..} =
-  if nullEditIssue e
-    then emptyWidget
-    else vBox
-           $ B.hBorder :
-            [txt "Status set to: " <+> showR eiStatus
-            , txt "Title set to: " <+> showR eiTitle ]
+renderUpdates EditIssue{..} =
+  case catMaybes rows of
+    [] -> emptyWidget
+    xs -> vBox $ B.hBorder : xs
+
+  where
+    rows = [ changeRow "Status" eiStatus showR
+           , changeRow "Title" eiTitle showR
+           , changeRow "Description" eiDescription (const (txt "changed"))
+           , changeRow "Labels" eiLabels showR
+           , changeRow "Weight" eiWeight showR
+           , changeRow "Owners" eiAssignees showR
+           , changeRow "Milestone" eiMilestoneId showR ]
+
+    changeRow :: T.Text -> Maybe a -> (a -> Widget n) -> Maybe (Widget n)
+    changeRow name thing f =
+      (\a -> hBox [txt name, txt " set to: ", f a]) <$> thing
+
 
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
