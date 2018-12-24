@@ -52,6 +52,11 @@ newtype Labels = Labels (S.Set Text)
 data StatusEvent = CloseEvent | ReopenEvent
                  deriving (Show, Generic)
 
+toggleStatus :: Text -> StatusEvent
+toggleStatus "closed" = ReopenEvent
+toggleStatus "opened" = CloseEvent
+toggleStatus s = error $ "Not Handled:" ++ show s
+
 instance ToJSON StatusEvent where
     toJSON CloseEvent  = "close"
     toJSON ReopenEvent = "reopen"

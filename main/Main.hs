@@ -25,7 +25,7 @@ import Brick hiding (continue, halt)
 import Brick.Forms
 
 import Control.Lens (view, ALens,  to, set, cloneLens, Traversal')
-import Control.Monad (void, when)
+import Control.Monad (void)
 import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
 
@@ -43,7 +43,6 @@ import Brick.Util (fg, on)
 
 import Data.Generics.Product
 import Data.Generics.Sum
-import GHC.Generics (Generic)
 
 import Control.Monad.IO.Class (liftIO)
 
@@ -51,10 +50,6 @@ import Cursor.Text
 
 import Text.Megaparsec
 import Text.Megaparsec.Char.Lexer
-
-import Data.Yaml (ParseException, decodeFileEither, encodeFile)
-import Data.Aeson(ToJSON, FromJSON)
-import System.Directory
 
 import Control.Monad.Reader
 
@@ -68,6 +63,9 @@ import qualified Data.ByteString as BS
 
 import Data.List
 
+import Config
+import Model
+import SetupForm
 
 
 tlsSettings :: TLSSettings
@@ -80,9 +78,6 @@ gitlabBaseUrl base = BaseUrl Https base 443 "api/v4"
 
 --listIssueNotes' token = listIssueNotes token Nothing project
 
-data Name = IssueList | Notes | Footer | FormArea T.Text | Note (Bool, Int)
-          | Metainfo IssueIid
-              deriving (Show, Ord, Generic, Eq)
 
 main :: IO ()
 main = do
@@ -91,14 +86,19 @@ main = do
   st <- selectInitialState conf
   gui st
 
-data OperationalState = OperationalState {
-                            mode :: Mode
-                          , footerMode :: FooterMode
-                          , config :: AppConfig
-                          } deriving Generic
--- TODO: Make a separte SetupState type
-data MajorMode = Setup (Form UserConfig () Name) FilePath
-               | Operational OperationalState deriving Generic
+theApp :: M.App AppState () Name
+theApp =
+    M.App { M.appDraw = drawUI
+          , M.appChooseCursor = M.showFirstCursor
+          , M.appHandleEvent = appEvent
+          , M.appStartEvent = return
+          , M.appAttrMap = theMap
+          }
+
+gui :: AppState -> IO ()
+gui s = void $ M.defaultMain theApp s
+
+{- Initialisation -}
 
 selectInitialState :: Either a UserConfig -> IO AppState
 selectInitialState e =
@@ -122,6 +122,10 @@ setupState :: IO AppState
 setupState = do
   configFile <- getConfigFile
   return $ AppState (Setup setupForm configFile)
+
+{-
+- Drawing functions
+-}
 
 drawUI :: AppState -> [Widget Name]
 drawUI (AppState a) = case a of
@@ -147,11 +151,12 @@ drawSetup form cfg = [ui, background]
 drawMain :: OperationalState -> [Widget Name]
 drawMain l =
     case view (field @"mode") l of
-      TicketListView ts -> ticketListWidget l ts
-      IssueView st -> issueViewWidget (view (typed @FooterMode) l) st
+      TicketListView ts -> drawTicketList l ts
+      IssueView st -> drawIssueView (view (typed @FooterMode) l) st
 
-ticketListWidget :: OperationalState -> TicketList -> [Widget Name]
-ticketListWidget l tl = [ui]
+-- | Draw the ticket list page
+drawTicketList :: OperationalState -> TicketList -> [Widget Name]
+drawTicketList l tl = [ui]
   where
     issues = view (field @"issues") tl
     boxLabel = str "Item " <+> cur <+> str " of " <+> total
@@ -160,7 +165,7 @@ ticketListWidget l tl = [ui]
               Just i -> str (show (i + 1))
     total = str $ show $ Vec.length $ view L.listElementsL issues
     box = B.borderWithLabel boxLabel $
-            L.renderList listDrawElement True issues
+            L.renderList drawTicketRow True issues
               <=>
             B.hBorder
               <=>
@@ -172,28 +177,129 @@ ticketListWidget l tl = [ui]
 errorPage :: Widget n -> Widget n
 errorPage reason = str "Error: " <+> reason
 
-issueViewWidget :: FooterMode -> IssuePage -> [Widget Name]
-issueViewWidget fm l = [issuePage fm l]
+drawIssueView :: FooterMode -> IssuePage -> [Widget Name]
+drawIssueView fm l = [drawIssuePage fm l]
 
-type Handler' s k =
-  s
-  -> T.BrickEvent Name ()
-  -> T.EventM Name (T.Next k)
+drawTicketRow :: Bool -> IssueResp -> Widget n
+drawTicketRow _ IssueResp{..} =
+    vLimit 1 $ hBox
+        [ hLimit 6 $ padRight Max $ int (unIssueIid irIid)
+        , padRight Max $ txt irTitle
+        , padLeft (Pad 1) $ txt irState]
 
-type HandlerR' s k =
-  s
-  -> T.BrickEvent Name ()
-  -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+drawIssuePage :: FooterMode -> IssuePage -> Widget Name
+drawIssuePage fm l =
+  B.border (vBox [metainfo, desc, notesSect
+                 , updateLog, B.hBorder, footer fm])
+  where
+    IssueResp{..} = view typed l
+    notes    = view (field @"issueNotes") l
 
-type Handler s = Handler' s s
+    boxLabel = int (unIssueIid irIid)
 
-type HandlerR s = HandlerR' s s
+    titleBox = boxLabel
+                    <+> padRight (Pad 1) (txt ":") <+> (txtWrap irTitle)
 
-halt :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
-halt = lift . M.halt
+    metainfo1 = [
+                  metaRow "author" (drawAuthor irAuthor)
+                , metaRow "state" (txt irState)
+                , metaRow "Created" (txt irCreatedAt) ]
 
-continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
-continue = lift . M.continue
+    metainfo2 = [ metaRow "Owner" (drawOwners irAssignees)
+                , metaRow "Labels" (drawLabels irLabels)
+                , metaRow "Updated" (txt irUpdatedAt) ]
+
+    metainfo = cached (Metainfo irIid) $ joinBorders $
+        vBox [  titleBox
+             ,  hBox [ vBox metainfo1
+                     , vLimit (length metainfo1 * 2) B.vBorder
+                     , vBox metainfo2]
+             , B.hBorder
+             ]
+
+    updateLog = drawUpdates (view (field @"updates") l)
+
+    desc = (txtWrap irDescription)
+
+    notesSect =
+      L.renderList drawNote True notes
+
+drawOwners :: [User] -> Widget n
+drawOwners [] = txt " "
+drawOwners us = hBox (intersperse (txt ", ") (map drawAuthor us))
+
+drawLabels :: [T.Text] -> Widget n
+drawLabels [] = txt " "
+drawLabels us = hBox (intersperse (txt ", ") (map txt us))
+
+drawUpdates :: EditIssue -> Widget Name
+drawUpdates EditIssue{..} =
+  case catMaybes rows of
+    [] -> emptyWidget
+    xs -> vBox $ B.hBorder : xs
+
+  where
+    rows = [ changeRow "Status" eiStatus showR
+           , changeRow "Title" eiTitle showR
+           , changeRow "Description" eiDescription (const (txt "changed"))
+           , changeRow "Labels" eiLabels showR
+           , changeRow "Weight" eiWeight showR
+           , changeRow "Owners" eiAssignees showR
+           , changeRow "Milestone" eiMilestoneId showR ]
+
+    changeRow :: T.Text -> Maybe a -> (a -> Widget n) -> Maybe (Widget n)
+    changeRow name thing f =
+      (\a -> hBox [txt name, txt " set to: ", f a]) <$> thing
+
+
+footer :: FooterMode -> Widget Name
+footer m = vLimit 1 $
+ case m of
+   FooterInfo ->
+    txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
+    <+>
+    txt "; F3 - comment; F4 - description"
+   FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
+
+formatFooterMode :: FooterInputMode -> T.Text
+formatFooterMode m = case m of
+                       Goto -> "g: "
+                       Title -> "title: "
+
+drawAuthor :: User -> Widget n
+drawAuthor  = txt . view (field @"userName")
+
+drawNote :: Bool -> IssueNoteResp -> Widget Name
+drawNote sel i = cached (Note (sel, view (field @"inrId") i)) $
+      vLimit 6 $ ignoreSel B.hBorder <=>
+                  (hBox [ noteMeta
+                        , B.vBorder
+                        , txtWrap (view (field @"inrBody") i)])
+  where
+    noteMeta =
+      hLimitPercent 20 $
+        vBox [ padLeft Max (drawAuthor (view (field @"inrAuthor") i))
+             , padLeft Max (drawDate (view (field @"inrCreatedAt") i)) ]
+
+    -- Stop the border rendering in the selection
+    ignoreSel = forceAttr L.listAttr
+
+
+metaRow :: T.Text -> Widget n -> Widget n
+metaRow metaLabel widget = vLimit 2 (B.hBorderWithLabel (txt metaLabel))
+                                  <=>
+                                  (vLimit 1 widget)
+
+--------------------------------------------------------------
+{- Handlers -}
+{-
+The event handling strategy
+
+1. First handle any truly global events like resizing. We need to invalidate the
+cache when this happens.
+2. Handle events which pertain to the footer type
+3. Then delegate to handling events in the main application window.
+-}
 
 globalHandler ::  Handler OperationalState -> Handler OperationalState
 globalHandler k l re = do
@@ -240,7 +346,7 @@ dispatchFooterInput Goto tc l =
   case checkGotoInput (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
     Just iid -> do
-      (liftIO $ loadOneIssue iid (view typed l)) >>=
+      (liftIO $ loadByIid iid (view typed l)) >>=
         M.continue . resetFooter . issueView l
 dispatchFooterInput Title tc l =
   case checkTitleInput (rebuildTextCursor tc) of
@@ -251,7 +357,6 @@ dispatchFooterInput Title tc l =
 
 issueEdit :: Traversal' OperationalState EditIssue
 issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates"
-
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
@@ -267,13 +372,6 @@ checkTitleInput :: T.Text -> Maybe T.Text
 checkTitleInput "" = Nothing
 checkTitleInput t  = Just t
 
-loadOneIssue :: IssueIid -> AppConfig -> IO IssuePage
-loadOneIssue iid ac = do
-  r <- runQuery ac (getOneIssue iid)
-  loadTicket r ac
-
-
-
 
 ticketListHandler :: TicketList -> Handler OperationalState
 ticketListHandler tl l (T.VtyEvent e) =
@@ -284,6 +382,16 @@ ticketListHandler tl l (T.VtyEvent e) =
       M.continue (set typed (TicketListView (TicketList res)) l)
 ticketListHandler _ l _ = M.continue l
 
+ticketListEnter :: TicketList
+                -> OperationalState
+                -> T.EventM Name (T.Next OperationalState)
+ticketListEnter tl o = do
+  let cursorTicket = view (field @"issues" . to L.listSelectedElement) tl
+  case cursorTicket of
+    Nothing -> M.continue o
+    Just (_, t) ->
+      liftIO (loadByIssueResp t (view (typed @AppConfig) o)) >>=
+            M.continue . issueView o
 
 -- Events which operate only on internal state
 internalIssuePageHandler :: HandlerR IssuePage
@@ -334,8 +442,7 @@ newCommentHandler ip = do
           let iid = view (typed @IssueResp . field @"irIid") ip'
               note = CreateIssueNote commentText Nothing
           _ <- runQuery ac (\tok p -> createIssueNote tok Nothing p iid note)
-          loadOneIssue iid ac
-
+          loadByIid iid ac
 
 
 -- | Events which change the mode
@@ -346,10 +453,6 @@ issuePageHandler tl l e =
       liftHandler typed tl IssueView
         (demote (view typed l) internalIssuePageHandler) l e
 
-toggleStatus :: T.Text -> StatusEvent
-toggleStatus "closed" = ReopenEvent
-toggleStatus "opened" = CloseEvent
-toggleStatus s = error $ "Not Handled:" ++ show s
 
 applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 applyChanges ip = do
@@ -357,7 +460,7 @@ applyChanges ip = do
       ei  = view (typed @EditIssue) ip
   ac <- ask
   ir <- liftIO $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei)
-  liftIO (loadTicket ir ac) >>= continue
+  liftIO (loadByIssueResp ir ac) >>= continue
 
 demote :: AppConfig -> HandlerR a -> Handler a
 demote ac h a e = runReaderT (h a e) ac
@@ -402,25 +505,32 @@ setupHandler f cfg _ e = do
     _ -> M.continue s'
 
 
+-- Main handler which delegates to either the setup or main mode
 appEvent :: Handler AppState
-appEvent a@(AppState mm) ev = case mm of
-                              Setup f cfg -> setupHandler f cfg a ev
-                              Operational o ->
-                                liftHandler typed o Operational handleMain a ev
+appEvent a@(AppState mm) ev =
+  case mm of
+    Setup f cfg -> setupHandler f cfg a ev
+    Operational o -> liftHandler typed o Operational handleMain a ev
 
 
-
-ticketListEnter :: TicketList -> OperationalState -> T.EventM Name (T.Next OperationalState)
-ticketListEnter tl o = do
-  let cursorTicket = view (field @"issues" . to L.listSelectedElement) tl
-  case cursorTicket of
-    Nothing -> M.continue o
-    Just (_, t) ->
-      liftIO (loadTicket t (view (typed @AppConfig) o)) >>=
-            M.continue . issueView o
 
 setMode :: Mode -> OperationalState -> OperationalState
 setMode = set typed
+
+
+{- drawing helpers -}
+
+int :: Int -> Widget n
+int = str . show
+
+showR :: Show a => a -> Widget n
+showR = str . show
+
+drawDate :: T.Text -> Widget a
+drawDate = txt
+
+
+{- Running external queries -}
 
 runQuery :: AppConfig -> (AccessToken -> ProjectId -> ClientM a) -> IO a
 runQuery l q = do
@@ -430,183 +540,19 @@ runQuery l q = do
   res <- runClientM (q tok project) reqEnv
   return (either (error . show) id res)
 
-loadTicket :: IssueResp -> AppConfig -> IO IssuePage
-loadTicket t l = do
+loadByIid :: IssueIid -> AppConfig -> IO IssuePage
+loadByIid iid ac = do
+  r <- runQuery ac (getOneIssue iid)
+  loadByIssueResp r ac
+
+loadByIssueResp :: IssueResp -> AppConfig -> IO IssuePage
+loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
   return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t noEdits)
 
 
-listDrawElement :: Bool -> IssueResp -> Widget n
-listDrawElement _ IssueResp{..} =
-    vLimit 1 $ hBox
-        [ hLimit 6 $ padRight Max $ int (unIssueIid irIid)
-        , padRight Max $ txt irTitle
-        , padLeft (Pad 1) $ txt irState]
-
-issuePage :: FooterMode -> IssuePage -> Widget Name
-issuePage fm l =
-  B.border (vBox [metainfo, desc, notesSect
-                 , updateLog, B.hBorder, footer fm])
-  where
-    IssueResp{..} = view typed l
-    notes    = view (field @"issueNotes") l
-
-    boxLabel = int (unIssueIid irIid)
-
-    titleBox = boxLabel
-                    <+> padRight (Pad 1) (txt ":") <+> (txtWrap irTitle)
-
-    metainfo1 = [
-                  metaRow "author" (renderAuthor irAuthor)
-                , metaRow "state" (txt irState)
-                , metaRow "Created" (txt irCreatedAt) ]
-
-    metainfo2 = [ metaRow "Owner" (renderOwners irAssignees)
-                , metaRow "Labels" (renderLabels irLabels)
-                , metaRow "Updated" (txt irUpdatedAt) ]
-
-    metainfo = cached (Metainfo irIid) $ joinBorders $
-        vBox [  titleBox
-             ,  hBox [ vBox metainfo1
-                     , vLimit (length metainfo1 * 2) B.vBorder
-                     , vBox metainfo2]
-             , B.hBorder
-             ]
-
-    updateLog = renderUpdates (view (field @"updates") l)
-
-    desc = (txtWrap irDescription)
-
-    notesSect =
-      L.renderList renderNote True notes
-
-renderOwners :: [User] -> Widget n
-renderOwners [] = txt " "
-renderOwners us = hBox (intersperse (txt ", ") (map renderAuthor us))
-
-renderLabels :: [T.Text] -> Widget n
-renderLabels [] = txt " "
-renderLabels us = hBox (intersperse (txt ", ") (map txt us))
-
-renderUpdates :: EditIssue -> Widget Name
-renderUpdates EditIssue{..} =
-  case catMaybes rows of
-    [] -> emptyWidget
-    xs -> vBox $ B.hBorder : xs
-
-  where
-    rows = [ changeRow "Status" eiStatus showR
-           , changeRow "Title" eiTitle showR
-           , changeRow "Description" eiDescription (const (txt "changed"))
-           , changeRow "Labels" eiLabels showR
-           , changeRow "Weight" eiWeight showR
-           , changeRow "Owners" eiAssignees showR
-           , changeRow "Milestone" eiMilestoneId showR ]
-
-    changeRow :: T.Text -> Maybe a -> (a -> Widget n) -> Maybe (Widget n)
-    changeRow name thing f =
-      (\a -> hBox [txt name, txt " set to: ", f a]) <$> thing
-
-
-footer :: FooterMode -> Widget Name
-footer m = vLimit 1 $
- case m of
-   FooterInfo ->
-    txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
-    <+>
-    txt "; F3 - comment; F4 - description"
-   FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
-
-formatFooterMode :: FooterInputMode -> T.Text
-formatFooterMode m = case m of
-                       Goto -> "g: "
-                       Title -> "title: "
-
-renderAuthor :: User -> Widget n
-renderAuthor  = txt . view (field @"userName")
-
-renderNote :: Bool -> IssueNoteResp -> Widget Name
-renderNote sel i = cached (Note (sel, view (field @"inrId") i)) $
-      vLimit 6 $ ignoreSel B.hBorder <=>
-                  (hBox [ noteMeta
-                        , B.vBorder
-                        , txtWrap (view (field @"inrBody") i)])
-  where
-    noteMeta =
-      hLimitPercent 20 $
-        vBox [ padLeft Max (renderAuthor (view (field @"inrAuthor") i))
-             , padLeft Max (renderDate (view (field @"inrCreatedAt") i)) ]
-
-    -- Stop the border rendering in the selection
-    ignoreSel = forceAttr L.listAttr
-
-
-metaRow :: T.Text -> Widget n -> Widget n
-metaRow metaLabel widget = vLimit 2 (B.hBorderWithLabel (txt metaLabel))
-                                  <=>
-                                  (vLimit 1 widget)
-
-
-
-customAttr :: A.AttrName
-customAttr = L.listSelectedAttr <> "custom"
-
-theMap :: AppState -> A.AttrMap
-theMap _ = A.attrMap V.defAttr
-    [ (L.listAttr,            V.white `on` V.blue)
-    , (L.listSelectedAttr,    V.blue `on` V.white)
-    , (customAttr,            fg V.cyan)
-    , (invalidFormInputAttr, V.white `on` V.red)
-    , (focusedFormInputAttr, V.black `on` V.yellow)
-    , ("default", V.defAttr )
-    ]
-
-data TicketList = TicketList {
-                    issues :: L.List Name IssueResp
-                    } deriving Generic
-
-data IssuePage = IssuePage {
-                  issueNotes :: L.List Name IssueNoteResp
-                  , currentIssue :: IssueResp
-                  , updates :: EditIssue
-                  } deriving Generic
-
-data Mode = TicketListView TicketList | IssueView IssuePage deriving Generic
-
-data FooterInputMode = Goto | Title
-
-data FooterMode = FooterInfo | FooterInput FooterInputMode TextCursor deriving Generic
-
-
-data AppState = AppState { majorMode :: MajorMode
-                         } deriving Generic
-
-data AppConfig = AppConfig {
-                    userConfig :: UserConfig
-                  , reqEnv :: ClientEnv
-                  } deriving Generic
-
-theApp :: M.App AppState () Name
-theApp =
-    M.App { M.appDraw = drawUI
-          , M.appChooseCursor = M.showFirstCursor
-          , M.appHandleEvent = appEvent
-          , M.appStartEvent = return
-          , M.appAttrMap = theMap
-          }
-
-gui :: AppState -> IO ()
-gui s = void $ M.defaultMain theApp s
-
-int :: Int -> Widget n
-int = str . show
-
-showR :: Show a => a -> Widget n
-showR = str . show
-
-renderDate :: T.Text -> Widget a
-renderDate = txt
+{- Text Cursor -}
 
 drawTextCursor :: TextCursor -> Widget Name
 drawTextCursor tc =
@@ -635,71 +581,47 @@ handleTextCursorEvent k tc e =
 
 
 
+{- Styles -}
 
-data UserConfig = UserConfig
-      { token :: AccessToken
-      , url :: T.Text
-      , project :: ProjectId
-      } deriving (Generic, ToJSON, FromJSON)
+customAttr :: A.AttrName
+customAttr = L.listSelectedAttr <> "custom"
 
-getConfigFile :: IO FilePath
-getConfigFile = getXdgDirectory XdgConfig ".gitlab-triager"
-
-
-readConfig :: IO (Either ParseException UserConfig)
-readConfig = do
-  configFile <- getConfigFile
---  putStrLn $ "Reading config from: " ++ configFile
-  decodeFileEither configFile
-
-writeConfig :: UserConfig -> IO ()
-writeConfig uc = do
-  configFile <- getConfigFile
---  putStrLn $ "Writing config to: " ++ configFile
-  encodeFile configFile uc
-
-deleteConfig :: IO ()
-deleteConfig = do
-  configFile <- getConfigFile
-  exists <- doesFileExist configFile
---  putStrLn $ "Removing config: " ++ configFile
-  when exists (removeFile configFile)
-
-type SetupForm = Form UserConfig () Name
-
--- TODO: Set invalid input style
-setupForm :: Form UserConfig e Name
-setupForm = newForm fields
-                    (UserConfig (AccessToken "")
-                                "gitlab.com"
-                                (ProjectId 13083))
-
-  where
-    fields = [ row "Token" tokenField
-             , row "Base URL" urlField
-             , row "Project ID" projectField ]
-
-    row s w = vLimit 1 . ((hLimit 11 $ padLeft Max $ txt s) <+> B.vBorder <+>) @@= w
-
-    tokenField = editField (field @"token" . typed @T.Text)
-                           (FormArea "token")
-                           (Just 1)
-                           id
-                           validateToken
-                           (txt . T.intercalate "\n")
-                           id
-
-    urlField = editTextField (field @"url")
-                             (FormArea "url")
-                             (Just 1)
+theMap :: AppState -> A.AttrMap
+theMap _ = A.attrMap V.defAttr
+    [ (L.listAttr,            V.white `on` V.blue)
+    , (L.listSelectedAttr,    V.blue `on` V.white)
+    , (customAttr,            fg V.cyan)
+    , (invalidFormInputAttr, V.white `on` V.red)
+    , (focusedFormInputAttr, V.black `on` V.yellow)
+    , ("default", V.defAttr )
+    ]
 
 
-    projectField = editShowableField (field @"project" . typed @Int)
-                                     (FormArea "project")
+{- Handler definitions -}
 
-    validateToken :: [T.Text] -> Maybe T.Text
-    validateToken [t] = if T.length t == 20 then Just t else Nothing
-    validateToken _   = Nothing
+type Handler' s k =
+  s
+  -> T.BrickEvent Name ()
+  -> T.EventM Name (T.Next k)
+
+type HandlerR' s k =
+  s
+  -> T.BrickEvent Name ()
+  -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+
+type Handler s = Handler' s s
+
+type HandlerR s = HandlerR' s s
+
+halt :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+halt = lift . M.halt
+
+continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
+continue = lift . M.continue
+
+{-
+- External Editor
+-}
 
 
 -- Copied from matterhorn
