@@ -25,6 +25,8 @@ data MajorMode = Setup (Form UserConfig () Name) FilePath
 data OperationalState = OperationalState {
                             mode :: Mode
                           , footerMode :: FooterMode
+                          , labels :: [LabelResp]
+                          , milestones :: [MilestoneResp]
                           , config :: AppConfig
                           } deriving Generic
 

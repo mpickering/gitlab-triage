@@ -114,8 +114,10 @@ initialise c = do
       conf = (AppConfig c env)
 
   es <- runQuery conf getIssue
+  labels <- runQuery conf getLabels
+  milestones <- runQuery conf getMilestones
   let les = TicketListView (TicketList (L.list IssueList (Vec.fromList es) 1))
-      mm = Operational (OperationalState les FooterInfo conf)
+      mm = Operational (OperationalState les FooterInfo labels milestones conf)
   return $ AppState mm
 
 setupState :: IO AppState

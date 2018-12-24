@@ -562,3 +562,46 @@ subscribeIssue tok sudo prj iid = do
     SubscribeIssueResp <- client (Proxy :: Proxy SubscribeIssueAPI) (Just tok) prj iid SubscribeIssue sudo
     return ()
 
+---
+--
+--
+
+type GetLabels =
+  GitLabRoot :> "projects"
+  :> Capture "id" ProjectId :> "labels"
+  :> Get '[JSON] [LabelResp]
+
+data LabelResp = LabelResp { lrName :: Text
+                           }
+
+instance FromJSON LabelResp where
+  parseJSON = withObject "label response" $ \o -> do
+                LabelResp <$> o .: "name"
+
+getLabels :: AccessToken -> ProjectId -> ClientM [LabelResp]
+getLabels tok prj
+  = client (Proxy :: Proxy GetLabels) (Just tok) prj
+
+
+
+type GetMilestones =
+  GitLabRoot :> "projects"
+  :> Capture "id" ProjectId :> "milestones"
+  :> Capture "state" Text
+  :> Get '[JSON] [MilestoneResp]
+
+data MilestoneResp = MilestoneResp { mrTitle :: Text
+                                   , mrDescription :: Text
+                                   }
+
+instance FromJSON MilestoneResp where
+  parseJSON = withObject "label response" $ \o -> do
+                MilestoneResp <$> o .: "title"
+                          <*> o .: "description"
+
+getMilestones :: AccessToken -> ProjectId -> ClientM [MilestoneResp]
+getMilestones tok prj
+  = client (Proxy :: Proxy GetMilestones) (Just tok) prj "active"
+
+
+
