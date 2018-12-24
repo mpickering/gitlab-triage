@@ -47,11 +47,6 @@ data IssueResp
                 }
     deriving (Show, Generic)
 
-data Assignee = Assignee deriving Show
-
-instance FromJSON Assignee where
-  parseJSON _ = return Assignee
-
 {-
 [
    {
