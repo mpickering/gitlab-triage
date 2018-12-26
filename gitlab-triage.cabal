@@ -51,6 +51,8 @@ executable gitlab-triage
                      , temporary
                      , process
                      , bytestring
+                     , containers
+                     , parser-combinators
   hs-source-dirs:      main
   default-language:    Haskell2010
 

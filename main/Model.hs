@@ -31,8 +31,8 @@ data OperationalState = OperationalState {
                           } deriving Generic
 
 data Mode = TicketListView TicketList
-					| IssueView IssuePage
-					deriving Generic
+          | IssueView IssuePage
+          deriving Generic
 
 data TicketList = TicketList {
                     issues :: L.List Name IssueResp
@@ -46,12 +46,14 @@ data IssuePage = IssuePage {
 
 
 data FooterMode = FooterInfo  -- Display generic info
-								| FooterInput FooterInputMode TextCursor  -- Accept input
-								deriving Generic
+                | FooterInput FooterInputMode TextCursor  -- Accept input
+                deriving Generic
 
 data FooterInputMode = Goto
-										 | Title
-										 deriving Generic
+                     | Title
+                     | FLabels
+                     | FMilestone
+                     deriving Generic
 
 
 data AppConfig = AppConfig {

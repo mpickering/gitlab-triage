@@ -49,7 +49,9 @@ import Control.Monad.IO.Class (liftIO)
 import Cursor.Text
 
 import Text.Megaparsec
-import Text.Megaparsec.Char.Lexer
+import Text.Megaparsec.Char
+import Control.Applicative.Combinators ()
+import Text.Megaparsec.Char.Lexer (decimal)
 
 import Control.Monad.Reader
 
@@ -60,12 +62,15 @@ import qualified System.IO.Temp as Sys
 import qualified System.Process as Sys
 
 import qualified Data.ByteString as BS
+import qualified Data.Set as S
 
 import Data.List
 
 import Config
 import Model
 import SetupForm
+import Debug.Trace
+
 
 
 tlsSettings :: TLSSettings
@@ -116,6 +121,7 @@ initialise c = do
   es <- runQuery conf getIssue
   labels <- runQuery conf getLabels
   milestones <- runQuery conf getMilestones
+  traceShowM milestones
   let les = TicketListView (TicketList (L.list IssueList (Vec.fromList es) 1))
       mm = Operational (OperationalState les FooterInfo labels milestones conf)
   return $ AppState mm
@@ -128,6 +134,7 @@ setupState = do
 {-
 - Drawing functions
 -}
+
 
 drawUI :: AppState -> [Widget Name]
 drawUI (AppState a) = case a of
@@ -260,13 +267,15 @@ footer m = vLimit 1 $
    FooterInfo ->
     txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
     <+>
-    txt "; F3 - comment; F4 - description"
+    txt "; F3 - comment; F4 - description; F5 - labels; F6 - milestones"
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 formatFooterMode :: FooterInputMode -> T.Text
 formatFooterMode m = case m of
                        Goto -> "g: "
                        Title -> "title: "
+                       FLabels -> "labels: "
+                       FMilestone -> "milestone: "
 
 drawAuthor :: User -> Widget n
 drawAuthor  = txt . view (field @"userName")
@@ -355,6 +364,21 @@ dispatchFooterInput Title tc l =
     Nothing -> M.continue (resetFooter l)
     Just t -> do
       M.continue $ set (issueEdit . field @"eiTitle") (Just t) (resetFooter l)
+dispatchFooterInput FLabels tc l =
+  case checkLabelInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just ls -> do
+      M.continue $ set (issueEdit . field @"eiLabels") (Just ls) (resetFooter l)
+dispatchFooterInput FMilestone tc l =
+  let ms = view (field @"milestones") l
+  in
+  case checkMilestoneInput (rebuildTextCursor tc) ms of
+    Nothing  -> M.continue (resetFooter l)
+    Just mid -> do
+      traceShowM mid
+      M.continue $ set (issueEdit . field @"eiMilestoneId") (Just mid) (resetFooter l)
+
+
 
 
 issueEdit :: Traversal' OperationalState EditIssue
@@ -366,6 +390,24 @@ resetFooter l = (set typed FooterInfo l)
 issueView :: OperationalState -> IssuePage -> OperationalState
 issueView l n = set (field @"mode") (IssueView n) l
 
+checkMilestoneInput :: T.Text
+                    -> [MilestoneResp]
+                    -> Maybe (Maybe MilestoneId)
+checkMilestoneInput t _ | T.null (T.strip t) = Just Nothing
+checkMilestoneInput t mr = Just $ lookupMilestone (T.strip t) mr
+
+lookupMilestone :: T.Text -> [MilestoneResp] -> Maybe MilestoneId
+lookupMilestone t [] = Nothing
+lookupMilestone t (m:ms) = if view (field @"mrTitle") m == t
+                              then Just (view (field @"mrId") m)
+                              else lookupMilestone t ms
+
+checkLabelInput :: T.Text -> Maybe Labels
+checkLabelInput t =
+  Labels . S.fromList <$> parseMaybe @() (sepBy plabel (string ",")) t
+  where
+--    label :: ParsecT () T.Text Identity T.Text
+    plabel = T.pack <$> (space *> (some alphaNumChar) <* space)
 
 checkGotoInput :: T.Text -> Maybe IssueIid
 checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
@@ -451,9 +493,31 @@ newCommentHandler ip = do
 issuePageHandler :: IssuePage -> Handler OperationalState
 issuePageHandler tl l e =
   case e of
+    (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput tl l
+    (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput tl l
     _ ->
       liftHandler typed tl IssueView
         (demote (view typed l) internalIssuePageHandler) l e
+
+startLabelInput :: IssuePage
+                -> OperationalState
+                -> EventM Name (Next OperationalState)
+startLabelInput tl l =
+  let labels = view (typed @IssueResp . field @"irLabels") tl
+      labels_t = T.intercalate ", " labels
+  in M.continue (set typed
+                 (FooterInput FLabels
+                 (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
+
+startMilestoneInput :: IssuePage
+                    -> OperationalState
+                    -> EventM Name (Next OperationalState)
+startMilestoneInput tl l =
+  let milestone = view (typed @IssueResp . field @"irMilestone") tl
+      milestone_t = maybe "" (\(Milestone n _) -> n) milestone
+  in M.continue (set typed
+                 (FooterInput FMilestone
+                 (fromMaybe emptyTextCursor $ makeTextCursor milestone_t)) l)
 
 
 applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
@@ -462,6 +526,8 @@ applyChanges ip = do
       ei  = view (typed @EditIssue) ip
   ac <- ask
   ir <- liftIO $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei)
+  -- TODO: Make this more precise
+  lift invalidateCache
   liftIO (loadByIssueResp ir ac) >>= continue
 
 demote :: AppConfig -> HandlerR a -> Handler a
@@ -551,6 +617,7 @@ loadByIssueResp :: IssueResp -> AppConfig -> IO IssuePage
 loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
+
   return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t noEdits)
 
 
