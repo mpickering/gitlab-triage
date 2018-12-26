@@ -10,6 +10,7 @@ import Brick.Forms
 import Cursor.Text
 import GHC.Generics
 import Servant.Client
+import Autocomplete
 
 
 
@@ -25,6 +26,7 @@ data MajorMode = Setup (Form UserConfig () Name) FilePath
 data OperationalState = OperationalState {
                             mode :: Mode
                           , footerMode :: FooterMode
+                          , overlayDialog :: DialogMode
                           , labels :: [LabelResp]
                           , milestones :: [MilestoneResp]
                           , config :: AppConfig
@@ -54,6 +56,12 @@ data FooterInputMode = Goto
                      | FLabels
                      | FMilestone
                      deriving Generic
+
+type MilestoneAutocomplete = Autocomplete [MilestoneResp] Name MilestoneResp
+
+data DialogMode = NoDialog
+                | MilestoneDialog MilestoneAutocomplete
+                deriving Generic
 
 
 data AppConfig = AppConfig {

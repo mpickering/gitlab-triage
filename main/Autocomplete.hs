@@ -7,7 +7,10 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE DeriveAnyClass #-}
-module Main where
+module Autocomplete(mkAutocomplete
+                   , Autocomplete(..)
+                   , drawAutocomplete
+                   , handleAutocompleteEvent) where
 
 import Brick hiding (continue, halt)
 import Brick.Forms
@@ -39,7 +42,6 @@ import Control.Lens
 
 data Autocomplete s n a
       = Autocomplete { autocompleteState :: s
-                     , autocompleteParse :: Text -> Maybe a
                      , autocompleteMatches :: Text -> s -> [a]
                      , autocompleteToText :: a -> Text
                      , autocompleteCursor :: TextCursor
@@ -47,9 +49,22 @@ data Autocomplete s n a
                      , autocompleteList :: L.List n a
                      } deriving Generic
 
+mkAutocomplete :: [a]
+               -> (Text -> [a] -> [a])
+               -> (a -> Text)
+               -> Maybe Text
+               -> n
+               -> n
+               -> Autocomplete [a] n a
+mkAutocomplete s m tt ini ns1 ns2 = Autocomplete s
+                                m
+                                tt
+                                (fromMaybe emptyTextCursor $ (ini >>= makeTextCursor))
+                                ns1
+                                (L.list ns2 (Vec.fromList s) 1)
+
 l = ["abcde", "abc", "def"]
 testAutocomplete = Autocomplete l
-                                Just
                                 (\t s -> filter (t `isPrefixOf`) s)
                                 id
                                 emptyTextCursor
@@ -99,12 +114,7 @@ updateAutocompleteItems :: Autocomplete s n a -> Autocomplete s n a
 updateAutocompleteItems ac@Autocomplete{..} =
   let txt = rebuildTextCursor autocompleteCursor
       matches = Vec.fromList (autocompleteMatches txt autocompleteState)
-  in set (field @"autocompleteList" . sets modifyListElements) matches ac
-
-modifyListElements :: Foldable t => (t e -> t e) -> L.GenericList n t e -> L.GenericList n t e
-modifyListElements els l =
-  over L.listElementsL els
-    . set L.listSelectedL (Just 0) $ l
+  in over (field @"autocompleteList" ) (L.listReplace matches (Just 0)) ac
 
 theMap :: s -> A.AttrMap
 theMap _ = A.attrMap V.defAttr

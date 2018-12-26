@@ -587,13 +587,13 @@ getLabels tok prj
 type GetMilestones =
   GitLabRoot :> "projects"
   :> Capture "id" ProjectId :> "milestones"
- -- :> Capture "state" Text
+  :> QueryParam "state" Text
   :> Get '[JSON] [MilestoneResp]
 
 data MilestoneResp = MilestoneResp { mrTitle :: Text
                                    , mrDescription :: Text
                                    , mrId :: MilestoneId
-                                   } deriving Generic
+                                   } deriving (Generic, Show)
 
 instance FromJSON MilestoneResp where
   parseJSON = withObject "label response" $ \o -> do
@@ -603,7 +603,7 @@ instance FromJSON MilestoneResp where
 
 getMilestones :: AccessToken -> ProjectId -> ClientM [MilestoneResp]
 getMilestones tok prj
-  = client (Proxy :: Proxy GetMilestones) (Just tok) prj "active"
+  = client (Proxy :: Proxy GetMilestones) (Just tok) prj (Just "active")
 
 
 

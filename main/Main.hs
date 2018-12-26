@@ -69,6 +69,7 @@ import Data.List
 import Config
 import Model
 import SetupForm
+import Autocomplete
 import Debug.Trace
 
 
@@ -123,7 +124,7 @@ initialise c = do
   milestones <- runQuery conf getMilestones
   traceShowM milestones
   let les = TicketListView (TicketList (L.list IssueList (Vec.fromList es) 1))
-      mm = Operational (OperationalState les FooterInfo labels milestones conf)
+      mm = Operational (OperationalState les FooterInfo NoDialog labels milestones conf)
   return $ AppState mm
 
 setupState :: IO AppState
@@ -161,7 +162,9 @@ drawMain :: OperationalState -> [Widget Name]
 drawMain l =
     case view (field @"mode") l of
       TicketListView ts -> drawTicketList l ts
-      IssueView st -> drawIssueView (view (typed @FooterMode) l) st
+      IssueView st ->
+        let dialogWindow = drawDialog (view (typed @DialogMode) l)
+        in dialogWindow : drawIssueView (view (typed @FooterMode) l) st
 
 -- | Draw the ticket list page
 drawTicketList :: OperationalState -> TicketList -> [Widget Name]
@@ -185,6 +188,15 @@ drawTicketList l tl = [ui]
 
 errorPage :: Widget n -> Widget n
 errorPage reason = str "Error: " <+> reason
+
+drawDialog :: DialogMode -> Widget Name
+drawDialog NoDialog = emptyWidget
+drawDialog (MilestoneDialog ac) = dBox
+  where
+    dBox = C.center . joinBorders
+            . B.border . hLimitPercent 75 . vLimitPercent 75 $ dialog
+
+    dialog = drawAutocomplete ac
 
 drawIssueView :: FooterMode -> IssuePage -> [Widget Name]
 drawIssueView fm l = [drawIssuePage fm l]
@@ -318,8 +330,40 @@ globalHandler k l re = do
    T.VtyEvent (V.EvResize {}) -> invalidateCache
    _ -> return ()
  case view typed l of
-   FooterInfo -> infoFooterHandler k l re
-   FooterInput m tc -> inputFooterHandler m tc k l re
+  MilestoneDialog ac -> milestoneDialogHandler ac l re
+  NoDialog ->
+    case view typed l of
+      FooterInfo -> infoFooterHandler k l re
+      FooterInput m tc -> inputFooterHandler m tc k l re
+
+milestoneDialogHandler
+  :: MilestoneAutocomplete
+  -> Handler OperationalState
+milestoneDialogHandler mac l re@(T.VtyEvent e) =
+  case e of
+    V.EvKey V.KEsc [] -> M.continue (resetDialog l)
+    V.EvKey V.KEnter [] ->
+      dispatchDialogInput mac l
+    _ -> do
+      mac' <- handleAutocompleteEvent mac re
+      M.continue (set (typed @DialogMode) (MilestoneDialog mac') l)
+milestoneDialogHandler _ l _ = M.continue l
+
+
+dispatchDialogInput :: MilestoneAutocomplete
+                    -> OperationalState
+                    -> EventM Name (Next OperationalState)
+dispatchDialogInput mac l =
+  let ms = view (field @"milestones") l
+      tc = view (field @"autocompleteCursor") mac
+  in
+  case checkMilestoneInput (rebuildTextCursor tc) ms of
+    Nothing  -> M.continue (resetDialog l)
+    Just mid -> do
+      traceShowM mid
+      M.continue $ set (issueEdit . field @"eiMilestoneId") (Just mid) (resetDialog l)
+
+
 
 infoFooterHandler :: Handler OperationalState -> Handler OperationalState
 infoFooterHandler k l re@(T.VtyEvent e) =
@@ -383,6 +427,9 @@ dispatchFooterInput FMilestone tc l =
 
 issueEdit :: Traversal' OperationalState EditIssue
 issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates"
+
+resetDialog :: OperationalState -> OperationalState
+resetDialog l = (set typed NoDialog l)
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
@@ -509,15 +556,31 @@ startLabelInput tl l =
                  (FooterInput FLabels
                  (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
 
+milestoneAutocomplete :: [MilestoneResp]
+                      -> Maybe T.Text
+                      -> MilestoneAutocomplete
+milestoneAutocomplete ms ini =
+  mkAutocomplete
+    ms
+    (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (view (field @"mrTitle") v))) s)
+    (view (field @"mrTitle"))
+    ini
+    (Dialog (MilestoneName False))
+    (Dialog (MilestoneName True))
+
+
+
 startMilestoneInput :: IssuePage
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
 startMilestoneInput tl l =
   let milestone = view (typed @IssueResp . field @"irMilestone") tl
-      milestone_t = maybe "" (\(Milestone n _) -> n) milestone
+      milestone_t = (\(Milestone n _) -> n) <$> milestone
+      milestones = view (field @"milestones") l
   in M.continue (set typed
-                 (FooterInput FMilestone
-                 (fromMaybe emptyTextCursor $ makeTextCursor milestone_t)) l)
+                 (MilestoneDialog (milestoneAutocomplete milestones milestone_t))
+                 l)
+
 
 
 applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
