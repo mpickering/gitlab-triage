@@ -54,10 +54,11 @@ data FooterMode = FooterInfo  -- Display generic info
                 | FooterInput FooterInputMode TextCursor  -- Accept input
                 deriving Generic
 
-data FooterInputMode = Goto
-                     | Title
+data FooterInputMode = FGoto
+                     | FTitle
                      | FLabels
                      | FMilestone
+                     | FWeight
                      deriving Generic
 
 type MilestoneAutocomplete = Autocomplete [MilestoneResp] Name MilestoneResp

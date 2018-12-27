@@ -314,10 +314,11 @@ footer m = vLimit 1 $
 
 formatFooterMode :: FooterInputMode -> T.Text
 formatFooterMode m = case m of
-                       Goto -> "g: "
-                       Title -> "title: "
+                       FGoto -> "g: "
+                       FTitle -> "title: "
                        FLabels -> "labels: "
                        FMilestone -> "milestone: "
+                       FWeight -> "weight: "
 
 drawAuthor :: User -> Widget n
 drawAuthor  = txt . view (field @"userName")
@@ -419,9 +420,9 @@ infoFooterHandler k l re@(T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.halt l
     V.EvKey (V.KChar 'g') [] ->
-      M.continue (set typed (FooterInput Goto emptyTextCursor) l)
+      M.continue (set typed (FooterInput FGoto emptyTextCursor) l)
     V.EvKey (V.KFun 2) [] ->
-      M.continue (set typed (FooterInput Title emptyTextCursor) l)
+      M.continue (set typed (FooterInput FTitle emptyTextCursor) l)
     _ev -> k l re
 infoFooterHandler k l re = k l re
 
@@ -446,13 +447,13 @@ dispatchFooterInput :: FooterInputMode
                     -> TextCursor
                     -> OperationalState
                     -> EventM n (Next OperationalState)
-dispatchFooterInput Goto tc l =
+dispatchFooterInput FGoto tc l =
   case checkGotoInput (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
     Just iid -> do
       (liftIO $ loadByIid iid (view typed l)) >>=
         M.continue . resetFooter . issueView l
-dispatchFooterInput Title tc l =
+dispatchFooterInput FTitle tc l =
   case checkTitleInput (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
     Just t -> do
@@ -470,6 +471,11 @@ dispatchFooterInput FMilestone tc l =
     Just mid -> do
       traceShowM mid
       M.continue $ set (issueEdit . field @"eiMilestoneId") (Just mid) (resetFooter l)
+dispatchFooterInput FWeight tc l =
+  case checkWeightInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just ls -> do
+      M.continue $ set (issueEdit . field @"eiWeight") (Just ls) (resetFooter l)
 
 
 
@@ -519,6 +525,10 @@ checkLabelInput t =
 
 checkGotoInput :: T.Text -> Maybe IssueIid
 checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
+
+checkWeightInput :: T.Text -> Maybe (Maybe Int)
+checkWeightInput "" = Just Nothing
+checkWeightInput t = Just <$> parseMaybe @() decimal t
 
 checkTitleInput :: T.Text -> Maybe T.Text
 checkTitleInput "" = Nothing
@@ -604,6 +614,7 @@ issuePageHandler tl l e =
     (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput tl l
     (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput tl l
     (T.VtyEvent (V.EvKey (V.KFun 7) []))  -> startOwnerInput tl l
+    (T.VtyEvent (V.EvKey (V.KFun 8) []))  -> startWeightInput tl l
     _ ->
       liftHandler typed tl IssueView
         (demote (view typed l) internalIssuePageHandler) l e
@@ -617,6 +628,16 @@ startLabelInput tl l =
   in M.continue (set typed
                  (FooterInput FLabels
                  (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
+
+startWeightInput :: IssuePage
+                -> OperationalState
+                -> EventM Name (Next OperationalState)
+startWeightInput tl l =
+  let w = view (typed @IssueResp . field @"irWeight") tl
+      weight_t = maybe (" ") (T.pack . show) w
+  in M.continue (set typed
+                 (FooterInput FWeight
+                 (fromMaybe emptyTextCursor $ makeTextCursor weight_t)) l)
 
 milestoneAutocomplete :: [MilestoneResp]
                       -> Maybe T.Text
@@ -641,8 +662,6 @@ ownerAutocomplete us ini =
     ini
     (Dialog (OwnerName False))
     (Dialog (OwnerName True))
-
-
 
 
 startMilestoneInput :: IssuePage
