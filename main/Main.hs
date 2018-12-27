@@ -579,7 +579,9 @@ internalIssuePageHandler l _ = continue l
 editDescriptionHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 editDescriptionHandler ip = do
   let desc = view (typed @IssueResp . field @"irDescription") ip
-  lift $ invokeExternalEditor (Just desc) (postCommentAndUpdate ip)
+      mod_desc = view (typed @Updates . typed @EditIssue . field @"eiDescription") ip
+      init_desc = fromMaybe desc mod_desc
+  lift $ invokeExternalEditor (Just init_desc) (postCommentAndUpdate ip)
   where
     postCommentAndUpdate :: IssuePage -> Maybe T.Text -> IO IssuePage
     postCommentAndUpdate ip' t =
@@ -594,7 +596,11 @@ editDescriptionHandler ip = do
 -- TODO: Should this be queued like the other events?
 newCommentHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 newCommentHandler ip = do
-  lift $ invokeExternalEditor Nothing (postCommentAndUpdate ip)
+
+  let mod_cin = view (typed @Updates . field @"comment") ip
+      mod_comment = view (field @"cinBody") <$> mod_cin
+
+  lift $ invokeExternalEditor mod_comment (postCommentAndUpdate ip)
   where
     postCommentAndUpdate :: IssuePage -> Maybe T.Text -> IO IssuePage
     postCommentAndUpdate ip' t =
