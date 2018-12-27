@@ -26,7 +26,7 @@ import Brick.Forms
 
 import Control.Lens (view, ALens,  to, set, cloneLens, Traversal')
 import Control.Monad (void)
-import Data.Maybe (fromMaybe, catMaybes)
+import Data.Maybe (fromMaybe, catMaybes, listToMaybe)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -122,9 +122,10 @@ initialise c = do
   es <- runQuery conf getIssue
   labels <- runQuery conf getLabels
   milestones <- runQuery conf getMilestones
-  traceShowM milestones
+  users <- runQuery conf (\tok _ -> getUsers tok)
   let les = TicketListView (TicketList (L.list IssueList (Vec.fromList es) 1))
-      mm = Operational (OperationalState les FooterInfo NoDialog labels milestones conf)
+      mm = Operational (OperationalState les FooterInfo NoDialog
+                                         labels milestones users conf)
   return $ AppState mm
 
 setupState :: IO AppState
@@ -191,7 +192,11 @@ errorPage reason = str "Error: " <+> reason
 
 drawDialog :: DialogMode -> Widget Name
 drawDialog NoDialog = emptyWidget
-drawDialog (MilestoneDialog ac) = dBox
+drawDialog (MilestoneDialog ac) = drawAutocompleteDialog ac
+drawDialog (OwnerDialog ac) = drawAutocompleteDialog ac
+
+drawAutocompleteDialog :: (Ord n, Show n) => Autocomplete s n a -> Widget n
+drawAutocompleteDialog ac = dBox
   where
     dBox = C.centerLayer . joinBorders
             . B.border . hLimitPercent 75 . vLimitPercent 75 $ dialog
@@ -330,30 +335,39 @@ globalHandler k l re = do
    T.VtyEvent (V.EvResize {}) -> invalidateCache
    _ -> return ()
  case view typed l of
-  MilestoneDialog ac -> milestoneDialogHandler ac l re
-  NoDialog ->
-    case view typed l of
-      FooterInfo -> infoFooterHandler k l re
-      FooterInput m tc -> inputFooterHandler m tc k l re
+    NoDialog ->
+      case view typed l of
+        FooterInfo -> infoFooterHandler k l re
+        FooterInput m tc -> inputFooterHandler m tc k l re
+    dc -> dialogHandler dc l re
 
-milestoneDialogHandler
-  :: MilestoneAutocomplete
-  -> Handler OperationalState
-milestoneDialogHandler mac l re@(T.VtyEvent e) =
-  case e of
-    V.EvKey V.KEsc [] -> M.continue (resetDialog l)
-    V.EvKey V.KEnter [] ->
-      dispatchDialogInput mac l
-    _ -> do
+dialogHandler :: DialogMode -> Handler OperationalState
+dialogHandler dc l re =
+  case re of
+      T.VtyEvent (V.EvKey e []) -> case e of
+                                     V.KEsc -> M.continue (resetDialog l)
+                                     V.KEnter -> dispatchDialogInput dc l
+                                     _ -> handleDialogEvent dc l re
+      _ -> M.continue l
+
+handleDialogEvent :: DialogMode
+                  -> Handler OperationalState
+handleDialogEvent dc l re  =
+  case dc of
+    MilestoneDialog mac -> do_one mac MilestoneDialog
+    OwnerDialog mac     -> do_one mac OwnerDialog
+    NoDialog            -> error "Handling dialog events when not in dialog mode"
+  where
+    do_one mac wrap = do
       mac' <- handleAutocompleteEvent mac re
-      M.continue (set (typed @DialogMode) (MilestoneDialog mac') l)
-milestoneDialogHandler _ l _ = M.continue l
+      M.continue (set (typed @DialogMode) (wrap mac') l)
 
 
-dispatchDialogInput :: MilestoneAutocomplete
+
+dispatchDialogInput :: DialogMode
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
-dispatchDialogInput mac l =
+dispatchDialogInput (MilestoneDialog mac) l =
   let ms = view (field @"milestones") l
       tc = view (field @"autocompleteCursor") mac
   in
@@ -362,6 +376,16 @@ dispatchDialogInput mac l =
     Just mid -> do
       traceShowM mid
       M.continue $ set (issueEdit . field @"eiMilestoneId") (Just mid) (resetDialog l)
+dispatchDialogInput (OwnerDialog mac) l =
+  let ms = view (field @"users") l
+      tc = view (field @"autocompleteCursor") mac
+  in
+  case checkUserInput (rebuildTextCursor tc) ms of
+    Nothing  -> M.continue (resetDialog l)
+    Just mid -> do
+      traceShowM mid
+      M.continue $ set (issueEdit . field @"eiAssignees") (Just mid) (resetDialog l)
+dispatchDialogInput NoDialog _ = error "NoDialog when handling dialog event"
 
 
 
@@ -436,6 +460,18 @@ resetFooter l = (set typed FooterInfo l)
 
 issueView :: OperationalState -> IssuePage -> OperationalState
 issueView l n = set (field @"mode") (IssueView n) l
+
+checkUserInput :: T.Text
+               -> [User]
+               -> Maybe [UserId]
+checkUserInput t _ | T.null (T.strip t) = Just []
+checkUserInput t mr = Just $ lookupUser (T.strip t) mr
+
+lookupUser :: T.Text -> [User] -> [UserId]
+lookupUser _ [] = []
+lookupUser t (m:ms) = if view (field @"userUsername") m == t
+                              then [view (field @"userId") m]
+                              else lookupUser t ms
 
 checkMilestoneInput :: T.Text
                     -> [MilestoneResp]
@@ -542,6 +578,7 @@ issuePageHandler tl l e =
   case e of
     (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput tl l
     (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput tl l
+    (T.VtyEvent (V.EvKey (V.KFun 7) []))  -> startOwnerInput tl l
     _ ->
       liftHandler typed tl IssueView
         (demote (view typed l) internalIssuePageHandler) l e
@@ -568,6 +605,19 @@ milestoneAutocomplete ms ini =
     (Dialog (MilestoneName False))
     (Dialog (MilestoneName True))
 
+ownerAutocomplete :: [User]
+                      -> Maybe T.Text
+                      -> OwnerAutocomplete
+ownerAutocomplete us ini =
+  mkAutocomplete
+    us
+    (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (view (field @"userUsername") v))) s)
+    (view (field @"userUsername"))
+    ini
+    (Dialog (OwnerName False))
+    (Dialog (OwnerName True))
+
+
 
 
 startMilestoneInput :: IssuePage
@@ -579,6 +629,17 @@ startMilestoneInput tl l =
       milestones = view (field @"milestones") l
   in M.continue (set typed
                  (MilestoneDialog (milestoneAutocomplete milestones milestone_t))
+                 l)
+
+startOwnerInput :: IssuePage
+                    -> OperationalState
+                    -> EventM Name (Next OperationalState)
+startOwnerInput tl l =
+  let owner = view (typed @IssueResp . field @"irAssignees") tl
+      owner_t = listToMaybe (view (field @"userUsername") <$> owner)
+      users = view (field @"users") l
+  in M.continue (set typed
+                 (OwnerDialog (ownerAutocomplete users owner_t))
                  l)
 
 

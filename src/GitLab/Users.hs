@@ -125,6 +125,20 @@ findUsersByEmail tok email = do
 
 
 ----------------------------------------------------------------------
+-- getUsers
+----------------------------------------------------------------------
+
+type GetUsersAPI =
+    GitLabRoot :> "users"
+    :> QueryParam "per_page" Int
+    :> Get '[JSON] [User]
+
+getUsers :: AccessToken -> ClientM [User]
+getUsers tok = do
+    client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100)
+
+
+----------------------------------------------------------------------
 -- addProjectMember
 ----------------------------------------------------------------------
 

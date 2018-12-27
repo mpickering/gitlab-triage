@@ -3,6 +3,7 @@ module Model (module Model, module Config, module Namespace) where
 
 import Namespace
 import GitLab.Tickets
+import GitLab.Users
 import Config
 
 import qualified Brick.Widgets.List as L
@@ -29,6 +30,7 @@ data OperationalState = OperationalState {
                           , overlayDialog :: DialogMode
                           , labels :: [LabelResp]
                           , milestones :: [MilestoneResp]
+                          , users :: [User]
                           , config :: AppConfig
                           } deriving Generic
 
@@ -58,9 +60,11 @@ data FooterInputMode = Goto
                      deriving Generic
 
 type MilestoneAutocomplete = Autocomplete [MilestoneResp] Name MilestoneResp
+type OwnerAutocomplete     = Autocomplete [User] Name User
 
 data DialogMode = NoDialog
                 | MilestoneDialog MilestoneAutocomplete
+                | OwnerDialog     OwnerAutocomplete
                 deriving Generic
 
 
