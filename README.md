@@ -19,7 +19,7 @@ TODO
       *  https://docs.gitlab.com/ee/api/labels.html
     - Need to implement autocomplete widget really
   * weight  -- Just an Int
-  * owners - Need to lookup user to get ID -- findUserByUsername
+  * owners - Need to lookup user to get ID -- findUserByUsername, done
 
 2. Ticket filtering
   * State

@@ -44,6 +44,7 @@ data IssueResp
                 , irUpdatedAt :: Text
                 , irClosedAt :: Maybe Text
                 , irCreatedAt :: Text
+                , irWeight :: Maybe Int
                 }
     deriving (Show, Generic)
 
@@ -156,6 +157,7 @@ instance FromJSON IssueResp where
                 <*> o .: "updated_at"
                 <*> o .: "closed_at"
                 <*> o .: "created_at"
+                <*> o .: "weight"
 
 getIssue :: AccessToken -> ProjectId -> ClientM [IssueResp]
 getIssue tok prj =
@@ -508,9 +510,9 @@ createIssueLink tok sudo prj iid cm = do
 
 type ListIssueLinksAPI =
     GitLabRoot :> "projects"
-    :> Capture "id" ProjectId :> "issue" :> Capture "iid" IssueIid :> "links"
+    :> Capture "id" ProjectId :> "issues" :> Capture "iid" IssueIid :> "links"
     :> QueryParam "per_page" Int
-    :> Get '[JSON] [IssueLink]
+    :> Get '[JSON] [IssueResp]
 
 data IssueLink = IssueLink IssueLinkId ProjectId IssueIid
 
@@ -523,7 +525,7 @@ instance FromJSON IssueLink where
 listIssueLinks :: AccessToken
                -> ProjectId
                -> IssueIid
-               -> ClientM [IssueLink]
+               -> ClientM [IssueResp]
 listIssueLinks tok prj iid = client (Proxy :: Proxy ListIssueLinksAPI) (Just tok) prj iid (Just 100)
 
 ----------------------------------------------------------------------

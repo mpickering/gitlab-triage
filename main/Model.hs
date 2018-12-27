@@ -46,6 +46,7 @@ data IssuePage = IssuePage {
                   issueNotes :: L.List Name IssueNoteResp
                   , currentIssue :: IssueResp
                   , updates :: EditIssue
+                  , links :: [IssueResp]
                   } deriving Generic
 
 

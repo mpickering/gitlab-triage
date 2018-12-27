@@ -218,10 +218,10 @@ drawIssuePage fm l =
   B.border (vBox [metainfo, desc, notesSect
                  , updateLog, B.hBorder, footer fm])
   where
-    IssueResp{..} = view typed l
+    ir@IssueResp{..} = view typed l
     notes    = view (field @"issueNotes") l
 
-    boxLabel = int (unIssueIid irIid)
+    boxLabel = drawTicketNo ir
 
     titleBox = boxLabel
                     <+> padRight (Pad 1) (txt ":") <+> (txtWrap irTitle)
@@ -229,11 +229,13 @@ drawIssuePage fm l =
     metainfo1 = [
                   metaRow "author" (drawAuthor irAuthor)
                 , metaRow "state" (txt irState)
-                , metaRow "Created" (txt irCreatedAt) ]
+                , metaRow "Created" (txt irCreatedAt)
+                , metaRow "Updated" (txt irUpdatedAt) ]
 
     metainfo2 = [ metaRow "Owner" (drawOwners irAssignees)
                 , metaRow "Labels" (drawLabels irLabels)
-                , metaRow "Updated" (txt irUpdatedAt) ]
+                , metaRow "Related" (drawRelated (view (field @"links") l))
+                , metaRow "Weight" (drawWeight irWeight) ]
 
     metainfo = cached (Metainfo irIid) $ joinBorders $
         vBox [  titleBox
@@ -249,6 +251,17 @@ drawIssuePage fm l =
 
     notesSect =
       L.renderList drawNote True notes
+
+drawWeight :: Maybe Int -> Widget n
+drawWeight Nothing = txt " "
+drawWeight (Just i) = int i
+
+drawRelated :: [IssueResp] -> Widget n
+drawRelated [] = txt " "
+drawRelated us = hBox (intersperse (txt ", ")  (map drawTicketNo us))
+
+drawTicketNo :: IssueResp -> Widget n
+drawTicketNo ir = txt "#" <+> int (unIssueIid (view (field @"irIid") ir))
 
 drawOwners :: [User] -> Widget n
 drawOwners [] = txt " "
@@ -741,8 +754,8 @@ loadByIssueResp :: IssueResp -> AppConfig -> IO IssuePage
 loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
-
-  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t noEdits)
+  links <- runQuery l (\tok prj -> listIssueLinks tok prj iid)
+  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t noEdits links)
 
 
 {- Text Cursor -}
