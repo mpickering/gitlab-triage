@@ -561,10 +561,13 @@ internalIssuePageHandler :: HandlerR IssuePage
 internalIssuePageHandler l (T.VtyEvent e) =
   case e of
     V.EvKey (V.KFun 1) [] ->
-      let statusEvent =
-            toggleStatus (view (typed @IssueResp . field @"irState") l)
+      let
+        ini_state = (view (typed @IssueResp . field @"irState") l)
+        mod_state = view (typed @Updates . typed @EditIssue . field @"eiStatus") l
+        statusEvent = maybe (Just (toggleStatus ini_state))
+                            (const Nothing) mod_state
       in continue
-          (set (field @"updates" . typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
+          (set (field @"updates" . typed @EditIssue . field @"eiStatus") statusEvent l)
     V.EvKey (V.KFun 3) [] ->
       newCommentHandler l
     V.EvKey (V.KFun 4) [] ->
