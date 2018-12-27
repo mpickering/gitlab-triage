@@ -593,7 +593,6 @@ editDescriptionHandler ip = do
             (set (field @"updates" . typed @EditIssue . field @"eiDescription")
               (Just descText) ip)
 
--- TODO: Should this be queued like the other events?
 newCommentHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 newCommentHandler ip = do
 
