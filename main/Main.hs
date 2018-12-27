@@ -219,25 +219,31 @@ drawIssuePage fm l =
                  , updateLog, B.hBorder, footer fm])
   where
     ir@IssueResp{..} = view typed l
+    EditIssue{..} = view typed l
     notes    = view (field @"issueNotes") l
 
     boxLabel = drawTicketNo ir
 
+
     titleBox = boxLabel
-                    <+> padRight (Pad 1) (txt ":") <+> (txtWrap irTitle)
+                    <+> padRight (Pad 1) (txt ":")
+                    <+> (changed txtWrap irTitle eiTitle)
+
+    newState CloseEvent = "closed"
+    newState ReopenEvent = "opened"
 
     metainfo1 = [
-                  metaRow "author" (drawAuthor irAuthor)
-                , metaRow "state" (txt irState)
+                  metaRow "Author" (drawAuthor irAuthor)
+                , metaRow "State" (changed txt irState (newState <$> eiStatus))
                 , metaRow "Created" (txt irCreatedAt)
                 , metaRow "Updated" (txt irUpdatedAt) ]
 
-    metainfo2 = [ metaRow "Owner" (drawOwners irAssignees)
-                , metaRow "Labels" (drawLabels irLabels)
+    metainfo2 = [ metaRow "Owner" (changed drawOwners irAssignees eiAssignees)
+                , metaRow "Labels" (changed drawLabels irLabels eiLabels)
                 , metaRow "Related" (drawRelated (view (field @"links") l))
-                , metaRow "Weight" (drawWeight irWeight) ]
+                , metaRow "Weight" (changed drawWeight irWeight eiWeight) ]
 
-    metainfo = cached (Metainfo irIid) $ joinBorders $
+    metainfo = joinBorders $
         vBox [  titleBox
              ,  hBox [ vBox metainfo1
                      , vLimit (length metainfo1 * 2) B.vBorder
@@ -247,10 +253,14 @@ drawIssuePage fm l =
 
     updateLog = drawUpdates (view (field @"updates") l)
 
-    desc = (txtWrap irDescription)
+    desc = (changed txtWrap irDescription eiDescription)
 
     notesSect =
       L.renderList drawNote True notes
+
+changed :: (a -> Widget n) -> a -> Maybe a -> Widget n
+changed f v Nothing = f v
+changed f _ (Just c) = withAttr "changed" $ f c
 
 drawWeight :: Maybe Int -> Widget n
 drawWeight Nothing = txt " "
@@ -267,9 +277,11 @@ drawOwners :: [User] -> Widget n
 drawOwners [] = txt " "
 drawOwners us = hBox (intersperse (txt ", ") (map drawAuthor us))
 
-drawLabels :: [T.Text] -> Widget n
-drawLabels [] = txt " "
-drawLabels us = hBox (intersperse (txt ", ") (map txt us))
+drawLabels :: Labels -> Widget n
+drawLabels (Labels s) =
+  if S.null s
+    then txt " "
+    else hBox (intersperse (txt ", ") (map txt (S.toList s)))
 
 drawUpdates :: EditIssue -> Widget Name
 drawUpdates EditIssue{..} =
@@ -476,14 +488,14 @@ issueView l n = set (field @"mode") (IssueView n) l
 
 checkUserInput :: T.Text
                -> [User]
-               -> Maybe [UserId]
+               -> Maybe [User]
 checkUserInput t _ | T.null (T.strip t) = Just []
 checkUserInput t mr = Just $ lookupUser (T.strip t) mr
 
-lookupUser :: T.Text -> [User] -> [UserId]
+lookupUser :: T.Text -> [User] -> [User]
 lookupUser _ [] = []
 lookupUser t (m:ms) = if view (field @"userUsername") m == t
-                              then [view (field @"userId") m]
+                              then [m]
                               else lookupUser t ms
 
 checkMilestoneInput :: T.Text
@@ -600,8 +612,8 @@ startLabelInput :: IssuePage
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
 startLabelInput tl l =
-  let labels = view (typed @IssueResp . field @"irLabels") tl
-      labels_t = T.intercalate ", " labels
+  let (Labels labels) = view (typed @IssueResp . field @"irLabels") tl
+      labels_t = T.intercalate ", " (S.toList labels)
   in M.continue (set typed
                  (FooterInput FLabels
                  (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
@@ -799,6 +811,7 @@ theMap _ = A.attrMap V.defAttr
     , (customAttr,            fg V.cyan)
     , (invalidFormInputAttr, V.white `on` V.red)
     , (focusedFormInputAttr, V.black `on` V.yellow)
+    , ("changed", V.red `on` V.black)
     , ("default", V.defAttr )
     ]
 

@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TypeApplications #-}
 
 module GitLab.Common where
 
@@ -69,6 +70,9 @@ instance IsString Labels where
 
 instance ToJSON Labels where
     toJSON (Labels lbls) = toJSON $ T.intercalate "," (S.toList lbls)
+
+instance FromJSON Labels where
+    parseJSON o = Labels . S.fromList <$> (parseJSON @([Text]) o)
 
 newtype IssueIid = IssueIid { unIssueIid :: Int }
                  deriving (Eq, Ord, Show, ToJSON, FromJSON, ToHttpApiData)

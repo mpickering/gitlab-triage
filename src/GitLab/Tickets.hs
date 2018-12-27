@@ -39,7 +39,7 @@ data IssueResp
                 , irDescription :: Text
                 , irState :: Text
                 , irAssignees :: [User]
-                , irLabels :: [Text]
+                , irLabels :: Labels
                 , irTitle :: Text
                 , irUpdatedAt :: Text
                 , irClosedAt :: Maybe Text
@@ -224,8 +224,8 @@ data EditIssue
                 , eiLabels      :: Maybe Labels
                 , eiStatus      :: Maybe StatusEvent
                 , eiUpdateTime  :: Maybe UTCTime
-                , eiWeight      :: Maybe Weight
-                , eiAssignees   :: Maybe [UserId]
+                , eiWeight      :: Maybe (Maybe Int)
+                , eiAssignees   :: Maybe [User]
                 , eiKeywords    :: Maybe [Text]
                 }
     deriving (Show, Generic)
@@ -244,7 +244,7 @@ instance ToJSON EditIssue where
         , "state_event" .=? eiStatus
         , "updated_at" .=? eiUpdateTime
         , "weight" .=? eiWeight
-        , "assignee_ids" .=? eiAssignees
+        , "assignee_ids" .=? (map userId <$> eiAssignees)
         , "keywords" .=? eiKeywords
         ]
 
