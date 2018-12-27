@@ -219,7 +219,7 @@ drawIssuePage fm l =
                  , updateLog, B.hBorder, footer fm])
   where
     ir@IssueResp{..} = view typed l
-    EditIssue{..} = view typed l
+    EditIssue{..} = view (typed @Updates . typed) l
     notes    = view (field @"issueNotes") l
 
     boxLabel = drawTicketNo ir
@@ -283,8 +283,8 @@ drawLabels (Labels s) =
     then txt " "
     else hBox (intersperse (txt ", ") (map txt (S.toList s)))
 
-drawUpdates :: EditIssue -> Widget Name
-drawUpdates EditIssue{..} =
+drawUpdates :: Updates -> Widget Name
+drawUpdates (Updates c EditIssue{..}) =
   case catMaybes rows of
     [] -> emptyWidget
     xs -> vBox $ B.hBorder : xs
@@ -296,7 +296,8 @@ drawUpdates EditIssue{..} =
            , changeRow "Labels" eiLabels showR
            , changeRow "Weight" eiWeight showR
            , changeRow "Owners" eiAssignees showR
-           , changeRow "Milestone" eiMilestoneId showR ]
+           , changeRow "Milestone" eiMilestoneId showR
+           , changeRow "Comment" c (txt . view (typed @T.Text)) ]
 
     changeRow :: T.Text -> Maybe a -> (a -> Widget n) -> Maybe (Widget n)
     changeRow name thing f =
@@ -481,7 +482,7 @@ dispatchFooterInput FWeight tc l =
 
 
 issueEdit :: Traversal' OperationalState EditIssue
-issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates"
+issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates" . typed @EditIssue
 
 resetDialog :: OperationalState -> OperationalState
 resetDialog l = (set typed NoDialog l)
@@ -563,7 +564,7 @@ internalIssuePageHandler l (T.VtyEvent e) =
       let statusEvent =
             toggleStatus (view (typed @IssueResp . field @"irState") l)
       in continue
-          (set (typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
+          (set (field @"updates" . typed @EditIssue . field @"eiStatus") (Just statusEvent) l)
     V.EvKey (V.KFun 3) [] ->
       newCommentHandler l
     V.EvKey (V.KFun 4) [] ->
@@ -587,25 +588,22 @@ editDescriptionHandler ip = do
         Just "" -> return ip'
         Just descText  -> do
           return $
-            (set (typed @EditIssue . field @"eiDescription") (Just descText) ip)
+            (set (field @"updates" . typed @EditIssue . field @"eiDescription")
+              (Just descText) ip)
 
 -- TODO: Should this be queued like the other events?
 newCommentHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 newCommentHandler ip = do
-  ac <- ask
-  lift $ invokeExternalEditor Nothing (postCommentAndUpdate ac ip)
+  lift $ invokeExternalEditor Nothing (postCommentAndUpdate ip)
   where
-    postCommentAndUpdate :: AppConfig -> IssuePage -> Maybe T.Text -> IO IssuePage
-    postCommentAndUpdate ac ip' t =
+    postCommentAndUpdate :: IssuePage -> Maybe T.Text -> IO IssuePage
+    postCommentAndUpdate ip' t =
       case t of
         Nothing -> return ip'
         Just "" -> return ip'
         Just commentText  -> do
-          let iid = view (typed @IssueResp . field @"irIid") ip'
-              note = CreateIssueNote commentText Nothing
-          _ <- runQuery ac (\tok p -> createIssueNote tok Nothing p iid note)
-          loadByIid iid ac
-
+          let note = CreateIssueNote commentText Nothing
+          return $ set (typed @Updates . field @"comment" ) (Just note) ip'
 
 -- | Events which change the mode
 issuePageHandler :: IssuePage -> Handler OperationalState
@@ -691,12 +689,17 @@ startOwnerInput tl l =
 applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
 applyChanges ip = do
   let iid = view (typed @IssueResp  . field @"irIid") ip
-      ei  = view (typed @EditIssue) ip
+      (Updates c ei)  = view (typed @Updates) ip
   ac <- ask
-  ir <- liftIO $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei)
+
+  unless (nullEditIssue ei)
+         (void $ liftIO $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei))
+  liftIO $ forM_ c (\note ->
+    runQuery ac (\tok p -> createIssueNote tok Nothing p iid note))
   -- TODO: Make this more precise
   lift invalidateCache
-  liftIO (loadByIssueResp ir ac) >>= continue
+  -- Could save one request here if we use the response from editIssue
+  liftIO (loadByIid iid ac) >>= continue
 
 demote :: AppConfig -> HandlerR a -> Handler a
 demote ac h a e = runReaderT (h a e) ac
@@ -786,7 +789,8 @@ loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
   links <- runQuery l (\tok prj -> listIssueLinks tok prj iid)
-  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t noEdits links)
+  let emptyUpdates = Updates Nothing noEdits
+  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t emptyUpdates links)
 
 
 {- Text Cursor -}
@@ -883,7 +887,7 @@ invokeExternalEditor initialText k = do
           Nothing -> return ()
           Just t -> do
                        Sys.hPutStr tmpFileHandle $ T.unpack $ t
-                       Sys.hClose tmpFileHandle
+        Sys.hClose tmpFileHandle
 
         -- Run the editor
         status <- Sys.system (editorProgram <> " " <> tmpFileName)

@@ -45,9 +45,12 @@ data TicketList = TicketList {
 data IssuePage = IssuePage {
                   issueNotes :: L.List Name IssueNoteResp
                   , currentIssue :: IssueResp
-                  , updates :: EditIssue
+                  , updates :: Updates
                   , links :: [IssueResp]
                   } deriving Generic
+
+data Updates = Updates { comment :: Maybe CreateIssueNote
+                       , metainfo :: EditIssue } deriving Generic
 
 
 data FooterMode = FooterInfo  -- Display generic info

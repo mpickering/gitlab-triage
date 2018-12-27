@@ -275,7 +275,7 @@ editIssue tok sudo prj iid ei =
 data CreateIssueNote
     = CreateIssueNote { cinBody :: Text
                       , cinCreatedAt :: Maybe UTCTime
-                      }
+                      } deriving Generic
 
 instance ToJSON CreateIssueNote where
     toJSON CreateIssueNote{..} = object
