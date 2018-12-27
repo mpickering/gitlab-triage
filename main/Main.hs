@@ -193,7 +193,7 @@ drawDialog :: DialogMode -> Widget Name
 drawDialog NoDialog = emptyWidget
 drawDialog (MilestoneDialog ac) = dBox
   where
-    dBox = C.center . joinBorders
+    dBox = C.centerLayer . joinBorders
             . B.border . hLimitPercent 75 . vLimitPercent 75 $ dialog
 
     dialog = drawAutocomplete ac
@@ -444,7 +444,7 @@ checkMilestoneInput t _ | T.null (T.strip t) = Just Nothing
 checkMilestoneInput t mr = Just $ lookupMilestone (T.strip t) mr
 
 lookupMilestone :: T.Text -> [MilestoneResp] -> Maybe MilestoneId
-lookupMilestone t [] = Nothing
+lookupMilestone _ [] = Nothing
 lookupMilestone t (m:ms) = if view (field @"mrTitle") m == t
                               then Just (view (field @"mrId") m)
                               else lookupMilestone t ms
