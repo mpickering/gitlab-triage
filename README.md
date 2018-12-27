@@ -21,6 +21,18 @@ TODO
   * weight  -- Just an Int
   * owners - Need to lookup user to get ID -- findUserByUsername, done
 
+Need to reflect updates in initial values for everything but
+* Open/close
+* desc
+* comment
+
+TODO
+* labels
+* miletones
+* title
+* owner
+* weight
+
 2. Ticket filtering
   * State
   * label
