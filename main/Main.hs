@@ -119,14 +119,18 @@ initialise c = do
               (gitlabBaseUrl (view (field @"url" . to T.unpack) c))
       conf = (AppConfig c env)
 
-  es <- runQuery conf getIssue
   labels <- runQuery conf getLabels
   milestones <- runQuery conf getMilestones
   users <- runQuery conf (\tok _ -> getUsers tok)
-  let les = TicketListView (TicketList (L.list IssueList (Vec.fromList es) 1))
-      mm = Operational (OperationalState les FooterInfo NoDialog
+  les <- TicketListView <$> loadTicketList conf
+  let mm = Operational (OperationalState les FooterInfo NoDialog
                                          labels milestones users conf)
   return $ AppState mm
+
+loadTicketList :: AppConfig -> IO TicketList
+loadTicketList conf = do
+  es <- runQuery conf getIssue
+  return $ TicketList (L.list IssueList (Vec.fromList es) 1)
 
 setupState :: IO AppState
 setupState = do
@@ -419,7 +423,6 @@ dispatchDialogInput NoDialog _ = error "NoDialog when handling dialog event"
 infoFooterHandler :: Handler OperationalState -> Handler OperationalState
 infoFooterHandler k l re@(T.VtyEvent e) =
   case e of
-    V.EvKey V.KEsc [] -> M.halt l
     V.EvKey (V.KChar 'g') [] ->
       M.continue (set typed (FooterInput FGoto emptyTextCursor) l)
     _ev -> k l re
@@ -537,6 +540,7 @@ checkTitleInput t  = Just t
 ticketListHandler :: TicketList -> Handler OperationalState
 ticketListHandler tl l (T.VtyEvent e) =
   case e of
+    V.EvKey V.KEsc [] -> M.halt l
     V.EvKey V.KEnter [] -> ticketListEnter tl l
     _ -> do
       res <- L.handleListEvent e (view typed tl)
@@ -612,15 +616,18 @@ newCommentHandler ip = do
 
 -- | Events which change the mode
 issuePageHandler :: IssuePage -> Handler OperationalState
-issuePageHandler tl l e =
+issuePageHandler ip l e =
   case e of
-    (T.VtyEvent (V.EvKey (V.KFun 2) []))  -> startTitleInput tl l
-    (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput tl l
-    (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput tl l
-    (T.VtyEvent (V.EvKey (V.KFun 7) []))  -> startOwnerInput tl l
-    (T.VtyEvent (V.EvKey (V.KFun 8) []))  -> startWeightInput tl l
+    (T.VtyEvent (V.EvKey V.KEsc [])) -> do
+      tl <- liftIO $ loadTicketList (view (typed @AppConfig) l)
+      M.continue (set typed (TicketListView tl) l)
+    (T.VtyEvent (V.EvKey (V.KFun 2) []))  -> startTitleInput ip l
+    (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput ip l
+    (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput ip l
+    (T.VtyEvent (V.EvKey (V.KFun 7) []))  -> startOwnerInput ip l
+    (T.VtyEvent (V.EvKey (V.KFun 8) []))  -> startWeightInput ip l
     _ ->
-      liftHandler typed tl IssueView
+      liftHandler typed ip IssueView
         (demote (view typed l) internalIssuePageHandler) l e
 
 startTitleInput :: IssuePage
