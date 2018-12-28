@@ -160,10 +160,10 @@ data GetIssuesParams
       , gipLabels :: Maybe LabelParam
       , gipMilestone :: Maybe MilestoneParam
       , gipScope :: Maybe ScopeParam
-      , gipAuthor :: Maybe UserId
+      , gipAuthor :: Maybe User
       , gipAssignee :: Maybe AssigneeParam
       , gipWeight :: Maybe Int
-      }
+      } deriving (Generic, Show)
 
 defaultSearchParams :: GetIssuesParams
 defaultSearchParams =
@@ -177,21 +177,23 @@ defaultSearchParams =
     Nothing
 
 
-data StateParam = Open | Closed
+data StateParam = Open | Closed deriving (Generic, Show)
 
 instance ToHttpApiData StateParam where
   toQueryParam Open = "opened"
   toQueryParam Closed = "closed"
   toUrlPiece = toQueryParam
 
-data LabelParam = WithLabels [Text] | NoLabels | AnyLabel
+data LabelParam = WithLabels Labels | NoLabels | AnyLabel
+  deriving (Generic, Show)
 
 instance ToHttpApiData LabelParam where
-    toQueryParam (WithLabels ls) = T.intercalate "," ls
+    toQueryParam (WithLabels ls) = toQueryParam ls
     toQueryParam NoLabels = "None"
     toQueryParam AnyLabel = "Any"
 
 data MilestoneParam = WithMilestone Text | NoMilestone | AnyMilestone
+  deriving (Generic, Show)
 
 instance ToHttpApiData MilestoneParam where
     toQueryParam (WithMilestone t) =  t
@@ -199,16 +201,18 @@ instance ToHttpApiData MilestoneParam where
     toQueryParam AnyMilestone = "Any"
 
 data ScopeParam = CreatedByMe | AssignedToMe | AllScope
+  deriving (Generic, Show)
 
 instance ToHttpApiData ScopeParam where
   toQueryParam CreatedByMe = "created_by_me"
   toQueryParam AssignedToMe = "assigned_to_me"
   toQueryParam AllScope = "all"
 
-data AssigneeParam = AssignedTo UserId | AssignedNone | AssignedAny
+data AssigneeParam = AssignedTo User | AssignedNone | AssignedAny
+  deriving (Generic, Show)
 
 instance ToHttpApiData AssigneeParam where
-  toQueryParam (AssignedTo uid) = toQueryParam uid
+  toQueryParam (AssignedTo user) = toQueryParam (userId user)
   toQueryParam AssignedNone = "None"
   toQueryParam AssignedAny  = "Any"
 
@@ -233,7 +237,7 @@ getIssues GetIssuesParams{..} tok prj =
       gipState
       gipLabels
       gipMilestone
-      gipAuthor
+      (userId <$> gipAuthor)
       gipAssignee
       gipWeight
 
@@ -648,7 +652,7 @@ type GetLabels =
   :> Get '[JSON] [LabelResp]
 
 data LabelResp = LabelResp { lrName :: Text
-                           }
+                           } deriving Generic
 
 instance FromJSON LabelResp where
   parseJSON = withObject "label response" $ \o -> do

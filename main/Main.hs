@@ -7,6 +7,8 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ViewPatterns #-}
 module Main where
 
 import GitLab.Tickets
@@ -166,31 +168,106 @@ drawSetup form cfg = [ui, background]
 
 drawMain :: OperationalState -> [Widget Name]
 drawMain l =
-    case view (field @"mode") l of
-      TicketListView ts -> drawTicketList l ts
-      IssueView st ->
-        let dialogWindow = drawDialog (view (typed @DialogMode) l)
-        in dialogWindow : drawIssueView (view (typed @FooterMode) l) st
+    let dialogWindow = drawDialog (view (typed @DialogMode) l)
+    in dialogWindow :
+      (case view (field @"mode") l of
+        TicketListView ts -> drawTicketList l ts
+        IssueView st -> drawIssueView (view (typed @FooterMode) l) st)
 
 -- | Draw the ticket list page
 drawTicketList :: OperationalState -> TicketList -> [Widget Name]
 drawTicketList l tl = [ui]
   where
     issues = view (field @"issues") tl
-    boxLabel = str "Item " <+> cur <+> str " of " <+> total
-    cur = case view L.listSelectedL issues of
-              Nothing -> str "-"
-              Just i -> str (show (i + 1))
-    total = str $ show $ Vec.length $ view L.listElementsL issues
-    box = B.borderWithLabel boxLabel $
+
+    params = view (field @"params") tl
+
+    searchBox = drawSearchBox params
+
+    --total = str $ show $ Vec.length $ view L.listElementsL issues
+
+    box = B.border . vBox $ [
             L.renderList drawTicketRow True issues
-              <=>
-            B.hBorder
-              <=>
-            footer (view typed l)
+            , B.hBorder
+            , searchBox
+            , B.hBorder
+            , footer (view typed l) ]
 
     ui = C.vCenter $ vBox [ C.hCenter box
                           ]
+
+drawSearchBox :: GetIssuesParams -> Widget n
+drawSearchBox GetIssuesParams{..} =
+  vBox [ row "(S)tate" drawState gipState
+       , row "S(c)ope" drawScope gipScope
+       , row "(L)abels" drawLabelParam gipLabels
+       , row "(M)ilestone" drawMilestoneParam gipMilestone
+       , row "(A)uthor" drawAuthorParam gipAuthor
+       , row "(O)wner" drawAssigneeParam gipAssignee
+       , row "(W)eight" drawWeightParam gipWeight
+       ]
+  where
+    row herald f w = txt herald <+> txt ": " <+> maybe emptyWidget f w
+
+txtState :: StateParam -> T.Text
+txtState Open = "Open"
+txtState Closed = "Closed"
+
+drawState :: StateParam -> Widget n
+drawState = txt . txtState
+
+txtScope :: ScopeParam -> T.Text
+txtScope CreatedByMe  = "Created by me"
+txtScope AssignedToMe = "Assigned to me"
+txtScope AllScope = "All"
+
+drawScope :: ScopeParam -> Widget n
+drawScope = txt . txtScope
+
+txtLabelParam :: LabelParam -> T.Text
+txtLabelParam l =
+  case l of
+    WithLabels (Labels ts) -> T.intercalate ", " (S.toList ts)
+    NoLabels -> "None"
+    AnyLabel -> "Any"
+
+drawLabelParam :: LabelParam -> Widget n
+drawLabelParam = txt . txtLabelParam
+
+txtMilestoneParam :: MilestoneParam -> T.Text
+txtMilestoneParam m =
+  case m of
+    WithMilestone t -> t
+    NoMilestone  -> "None"
+    AnyMilestone -> "Any"
+
+drawMilestoneParam :: MilestoneParam -> Widget n
+drawMilestoneParam = txt . txtMilestoneParam
+
+txtAuthorParam :: User -> T.Text
+txtAuthorParam u = view (field @"userName") u
+
+drawAuthorParam :: User -> Widget n
+drawAuthorParam = txt . txtAuthorParam
+
+txtAssigneeParam :: AssigneeParam -> T.Text
+txtAssigneeParam a =
+  case a of
+    AssignedTo u -> view (field @"userName") u
+    AssignedNone -> "None"
+    AssignedAny -> "Any"
+
+drawAssigneeParam :: AssigneeParam -> Widget n
+drawAssigneeParam = txt . txtAssigneeParam
+
+txtWeightParam :: Int -> T.Text
+txtWeightParam = T.pack . show
+
+drawWeightParam :: Int -> Widget n
+drawWeightParam = txt . txtWeightParam
+
+
+
 
 errorPage :: Widget n -> Widget n
 errorPage reason = str "Error: " <+> reason
@@ -199,6 +276,7 @@ drawDialog :: DialogMode -> Widget Name
 drawDialog NoDialog = emptyWidget
 drawDialog (MilestoneDialog ac) = drawAutocompleteDialog ac
 drawDialog (OwnerDialog ac) = drawAutocompleteDialog ac
+drawDialog (SearchParamsDialog _ _ ac) = drawAutocompleteDialog ac
 
 drawAutocompleteDialog :: (Ord n, Show n) => Autocomplete s n a -> Widget n
 drawAutocompleteDialog ac = dBox
@@ -393,6 +471,7 @@ handleDialogEvent dc l re  =
   case dc of
     MilestoneDialog mac -> do_one mac MilestoneDialog
     OwnerDialog mac     -> do_one mac OwnerDialog
+    SearchParamsDialog a1 a2 mac -> do_one mac (\mac' -> SearchParamsDialog a1 a2 mac')
     NoDialog            -> error "Handling dialog events when not in dialog mode"
   where
     do_one mac wrap = do
@@ -422,6 +501,14 @@ dispatchDialogInput (OwnerDialog mac) l =
     Just mid -> do
       traceShowM mid
       M.continue $ set (issueEdit . field @"eiAssignees") (Just mid) (resetDialog l)
+dispatchDialogInput (SearchParamsDialog check place mac) l =
+  let tc = view (field @"autocompleteCursor") mac
+  in
+  case check (rebuildTextCursor tc) of
+    Nothing  -> M.continue (resetDialog l)
+    Just mid -> do
+      M.continue $ set (typed @Mode . _Ctor @"TicketListView"
+                       . cloneLens place) (Just mid) (resetDialog l)
 dispatchDialogInput NoDialog _ = error "NoDialog when handling dialog event"
 
 
@@ -550,11 +637,80 @@ ticketListHandler tl l (T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.halt l
     V.EvKey V.KEnter [] -> ticketListEnter tl l
+    V.EvKey (V.KChar 's') [] -> M.continue (startStateDialog tl l)
+    V.EvKey (V.KChar 'c') [] -> M.continue (startScopeDialog tl l)
+    V.EvKey (V.KChar 'l') [] -> M.continue (startLabelDialog tl l)
+    V.EvKey (V.KChar 'm') [] -> M.continue (startMilestoneDialog tl l)
+    V.EvKey (V.KChar 'a') [] -> M.continue (startAuthorDialog tl l)
+    V.EvKey (V.KChar 'o') [] -> M.continue (startOwnerDialog tl l)
+    V.EvKey (V.KChar 'w') [] -> M.continue (startWeightDialog tl l)
     _ -> do
       res <- L.handleListEvent e (view typed tl)
       let tl' = set (field @"issues") res tl
       M.continue (set typed (TicketListView tl') l)
 ticketListHandler _ l _ = M.continue l
+
+startScopeDialog =
+  startDialog txtScope checkScope (field @"params" . field @"gipScope")
+              [AllScope, CreatedByMe, AssignedToMe]
+  where
+    checkScope (T.toLower -> t) =
+      case t of
+        "all" -> Just AllScope
+        "created by me" -> Just CreatedByMe
+        "assigned to me" -> Just AssignedToMe
+        _ -> Nothing
+
+startLabelDialog tl l =
+  startDialog txtLabelParam checkLabel (field @"params" . field @"gipLabels")
+              ([NoLabels, AnyLabel] ++ ls) tl l
+  where
+    ls = WithLabels . mkLabel . view (field @"lrName")
+          <$> view (field @"labels") l
+
+    checkLabel (T.toLower -> t) =
+      case t of
+        "none" -> Just NoLabels
+        "any"  -> Just AnyLabel
+        ts     -> WithLabels <$> checkLabelInput ts
+
+startMilestoneDialog = undefined
+startAuthorDialog = undefined
+startOwnerDialog = undefined
+startWeightDialog = undefined
+
+startDialog :: (a -> T.Text)
+            -> (T.Text -> Maybe a)
+            -> ALens TicketList TicketList (Maybe a) (Maybe a)
+            -> [a]
+            -> TicketList
+            -> OperationalState
+            -> OperationalState
+startDialog draw check place ini tl l =
+  let ini_state = view (cloneLens place) tl
+      state_t = draw <$> ini_state
+
+      ac =
+        mkAutocomplete
+          ini
+          (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s)
+          draw
+          state_t
+          (Dialog (MilestoneName False))
+          (Dialog (MilestoneName True))
+
+  in set typed (SearchParamsDialog check place ac) l
+
+startStateDialog :: TicketList -> OperationalState -> OperationalState
+startStateDialog =
+  startDialog txtState
+              (checkStateInput . T.toLower)
+              (field @"params" . field @"gipState")
+              [Open, Closed]
+  where
+    checkStateInput "open" = Just Open
+    checkStateInput "closed" = Just Closed
+    checkStateInput _ = Nothing
 
 ticketListEnter :: TicketList
                 -> OperationalState

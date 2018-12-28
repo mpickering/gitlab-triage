@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ExistentialQuantification #-}
 module Model (module Model, module Config, module Namespace) where
 
 import Namespace
@@ -12,6 +13,8 @@ import Cursor.Text
 import GHC.Generics
 import Servant.Client
 import Autocomplete
+import Control.Lens (ALens)
+import Data.Text (Text)
 
 
 
@@ -68,10 +71,32 @@ data FooterInputMode = FGoto
 type MilestoneAutocomplete = Autocomplete [MilestoneResp] Name MilestoneResp
 type OwnerAutocomplete     = Autocomplete [User] Name User
 
+type AppAutocomplete a = Autocomplete [a] Name a
+
 data DialogMode = NoDialog
                 | MilestoneDialog MilestoneAutocomplete
                 | OwnerDialog     OwnerAutocomplete
-                deriving Generic
+                | forall a . SearchParamsDialog
+                    (Text -> Maybe a)
+                    (ALens TicketList TicketList (Maybe a) (Maybe a))
+                    (AppAutocomplete a)
+
+data SearchParamMode =
+  SPState
+{-
+  SP (AppAutocomplete
+      { gipState :: Maybe StateParam
+      , gipLabels :: Maybe LabelParam
+      , gipMilestone :: Maybe MilestoneParam
+      , gipScope :: Maybe ScopeParam
+      , gipAuthor :: Maybe User
+      , gipAssignee :: Maybe AssigneeParam
+      , gipWeight :: Maybe Int
+      } deriving (Generic, Show)
+      -}
+
+
+
 
 
 data AppConfig = AppConfig {

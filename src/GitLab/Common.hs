@@ -50,6 +50,10 @@ newtype ProjectId = ProjectId Int
 newtype Labels = Labels (S.Set Text)
                deriving (Semigroup, Monoid, Show)
 
+
+instance ToHttpApiData Labels where
+  toQueryParam (Labels s) = T.intercalate "," (S.toList s)
+
 data StatusEvent = CloseEvent | ReopenEvent
                  deriving (Show, Generic)
 
