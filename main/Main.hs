@@ -122,15 +122,16 @@ initialise c = do
   labels <- runQuery conf getLabels
   milestones <- runQuery conf getMilestones
   users <- runQuery conf (\tok _ -> getUsers tok)
-  les <- TicketListView <$> loadTicketList conf
+  les <- TicketListView <$> loadTicketList defaultSearchParams conf
   let mm = Operational (OperationalState les FooterInfo NoDialog
                                          labels milestones users conf)
   return $ AppState mm
 
-loadTicketList :: AppConfig -> IO TicketList
-loadTicketList conf = do
-  es <- runQuery conf (getIssues defaultSearchParams)
+loadTicketList :: GetIssuesParams -> AppConfig -> IO TicketList
+loadTicketList sp conf = do
+  es <- runQuery conf (getIssues sp)
   return $ TicketList (L.list IssueList (Vec.fromList es) 1)
+                      sp
 
 setupState :: IO AppState
 setupState = do
@@ -551,7 +552,8 @@ ticketListHandler tl l (T.VtyEvent e) =
     V.EvKey V.KEnter [] -> ticketListEnter tl l
     _ -> do
       res <- L.handleListEvent e (view typed tl)
-      M.continue (set typed (TicketListView (TicketList res)) l)
+      let tl' = set (field @"issues") res tl
+      M.continue (set typed (TicketListView tl') l)
 ticketListHandler _ l _ = M.continue l
 
 ticketListEnter :: TicketList
@@ -626,7 +628,7 @@ issuePageHandler :: IssuePage -> Handler OperationalState
 issuePageHandler ip l e =
   case e of
     (T.VtyEvent (V.EvKey V.KEsc [])) -> do
-      tl <- liftIO $ loadTicketList (view (typed @AppConfig) l)
+      tl <- liftIO $ loadTicketList defaultSearchParams (view (typed @AppConfig) l)
       M.continue (set typed (TicketListView tl) l)
     (T.VtyEvent (V.EvKey (V.KChar 't') []))  -> startTitleInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'l') []))  -> startLabelInput ip l

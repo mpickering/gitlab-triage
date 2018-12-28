@@ -40,6 +40,7 @@ data Mode = TicketListView TicketList
 
 data TicketList = TicketList {
                     issues :: L.List Name IssueResp
+                    , params :: GetIssuesParams
                     } deriving Generic
 
 data IssuePage = IssuePage {
