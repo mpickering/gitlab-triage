@@ -422,8 +422,6 @@ infoFooterHandler k l re@(T.VtyEvent e) =
     V.EvKey V.KEsc [] -> M.halt l
     V.EvKey (V.KChar 'g') [] ->
       M.continue (set typed (FooterInput FGoto emptyTextCursor) l)
-    V.EvKey (V.KFun 2) [] ->
-      M.continue (set typed (FooterInput FTitle emptyTextCursor) l)
     _ev -> k l re
 infoFooterHandler k l re = k l re
 
@@ -617,6 +615,7 @@ newCommentHandler ip = do
 issuePageHandler :: IssuePage -> Handler OperationalState
 issuePageHandler tl l e =
   case e of
+    (T.VtyEvent (V.EvKey (V.KFun 2) []))  -> startTitleInput tl l
     (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput tl l
     (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput tl l
     (T.VtyEvent (V.EvKey (V.KFun 7) []))  -> startOwnerInput tl l
@@ -625,12 +624,25 @@ issuePageHandler tl l e =
       liftHandler typed tl IssueView
         (demote (view typed l) internalIssuePageHandler) l e
 
+startTitleInput :: IssuePage
+                -> OperationalState
+                -> EventM Name (Next OperationalState)
+startTitleInput tl l =
+  let title_ini = view (typed @IssueResp . field @"irTitle") tl
+      title_mod = view (typed @Updates . typed @EditIssue . field @"eiTitle") tl
+      title_t = fromMaybe title_ini title_mod
+  in M.continue (set typed
+                 (FooterInput FTitle
+                 (fromMaybe emptyTextCursor $ makeTextCursor title_t)) l)
+
 startLabelInput :: IssuePage
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
 startLabelInput tl l =
-  let (Labels labels) = view (typed @IssueResp . field @"irLabels") tl
-      labels_t = T.intercalate ", " (S.toList labels)
+  let labels_ini = view (typed @IssueResp . field @"irLabels") tl
+      labels_mod = view (typed @Updates . typed @EditIssue . field @"eiLabels") tl
+      (Labels cur_labels) = fromMaybe labels_ini labels_mod
+      labels_t = T.intercalate ", " (S.toList cur_labels)
   in M.continue (set typed
                  (FooterInput FLabels
                  (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
@@ -639,8 +651,10 @@ startWeightInput :: IssuePage
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
 startWeightInput tl l =
-  let w = view (typed @IssueResp . field @"irWeight") tl
-      weight_t = maybe (" ") (T.pack . show) w
+  let w_ini = view (typed @IssueResp . field @"irWeight") tl
+      w_mod = view (typed @Updates . typed @EditIssue . field @"eiWeight") tl
+      cur_w = fromMaybe w_ini w_mod
+      weight_t = maybe (" ") (T.pack . show) cur_w
   in M.continue (set typed
                  (FooterInput FWeight
                  (fromMaybe emptyTextCursor $ makeTextCursor weight_t)) l)
