@@ -23,8 +23,10 @@ import Data.String
 import Data.Time.Clock
 import Servant.API
 import Servant.Client
+import Servant.API.ResponseHeaders
 import GitLab.Common
 import GHC.Generics
+import qualified Data.ByteString.Char8 as B
 
 ----------------------------------------------------------------------
 -- createUser
@@ -131,11 +133,26 @@ findUsersByEmail tok email = do
 type GetUsersAPI =
     GitLabRoot :> "users"
     :> QueryParam "per_page" Int
-    :> Get '[JSON] [User]
+    :> QueryParam "page" Int
+    :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int] [User]))
 
 getUsers :: AccessToken -> ClientM [User]
 getUsers tok = do
-    client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100)
+  h <- mkReq 1
+  let total = fromMaybe "1" $ lookup "X-Total-Pages" (getHeaders h )
+      total_n = read (B.unpack total) :: Int
+  us <- loop 2 total_n
+  return $ getResponse h ++ us
+  where
+    mkReq k = client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100) (Just k)
+    loop k n
+     | k > n = return []
+     | otherwise = do
+          us <- getResponse <$> mkReq k
+          uss <- loop (k + 1) n
+          return $ us ++ uss
+
+
 
 
 ----------------------------------------------------------------------

@@ -570,7 +570,6 @@ internalIssuePageHandler l (T.VtyEvent e) =
       newCommentHandler l
     V.EvKey (V.KFun 4) [] ->
       editDescriptionHandler l
-
     V.EvKey (V.KFun 10) [] ->
       applyChanges l
     ev -> continue
