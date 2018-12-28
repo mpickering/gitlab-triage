@@ -238,15 +238,15 @@ drawIssuePage fm l =
 
     metainfo1 = [
                   metaRow "Author" (drawAuthor irAuthor)
-                , metaRow "State" (changed txt irState (newState <$> eiStatus))
+                , metaRow "(S)tate" (changed txt irState (newState <$> eiStatus))
                 , metaRow "Created" (txt irCreatedAt)
                 , metaRow "Updated" (txt irUpdatedAt)
-                , metaRow "Milestone" (changed drawMilestone irMilestone eiMilestone)]
+                , metaRow "(M)ilestone" (changed drawMilestone irMilestone eiMilestone)]
 
-    metainfo2 = [ metaRow "Owner" (changed drawOwners irAssignees eiAssignees)
-                , metaRow "Labels" (changed drawLabels irLabels eiLabels)
+    metainfo2 = [ metaRow "(O)wner" (changed drawOwners irAssignees eiAssignees)
+                , metaRow "(L)abels" (changed drawLabels irLabels eiLabels)
                 , metaRow "Related" (drawRelated (view (field @"links") l))
-                , metaRow "Weight" (changed drawWeight irWeight eiWeight)
+                , metaRow "(W)eight" (changed drawWeight irWeight eiWeight)
                 , metaRow "" (txt " ")
                 ]
 
@@ -319,9 +319,7 @@ footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
    FooterInfo ->
-    txt "r - reload; g - goto; F1 - open/close; F2 - title; F10 - Apply changes"
-    <+>
-    txt "; F3 - comment; F4 - description; F5 - labels; F6 - milestones"
+    txt "r - reload; g - goto; c - comment; d - description; F10 - commit changes"
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 formatFooterMode :: FooterInputMode -> T.Text
@@ -571,7 +569,7 @@ ticketListEnter tl o = do
 internalIssuePageHandler :: HandlerR IssuePage
 internalIssuePageHandler l (T.VtyEvent e) =
   case e of
-    V.EvKey (V.KFun 1) [] ->
+    V.EvKey (V.KChar 's') [] ->
       let
         ini_state = (view (typed @IssueResp . field @"irState") l)
         mod_state = view (typed @Updates . typed @EditIssue . field @"eiStatus") l
@@ -579,9 +577,9 @@ internalIssuePageHandler l (T.VtyEvent e) =
                             (const Nothing) mod_state
       in continue
           (set (field @"updates" . typed @EditIssue . field @"eiStatus") statusEvent l)
-    V.EvKey (V.KFun 3) [] ->
+    V.EvKey (V.KChar 'c') [] ->
       newCommentHandler l
-    V.EvKey (V.KFun 4) [] ->
+    V.EvKey (V.KChar 'd') [] ->
       editDescriptionHandler l
     V.EvKey (V.KFun 10) [] ->
       applyChanges l
@@ -630,11 +628,11 @@ issuePageHandler ip l e =
     (T.VtyEvent (V.EvKey V.KEsc [])) -> do
       tl <- liftIO $ loadTicketList (view (typed @AppConfig) l)
       M.continue (set typed (TicketListView tl) l)
-    (T.VtyEvent (V.EvKey (V.KFun 2) []))  -> startTitleInput ip l
-    (T.VtyEvent (V.EvKey (V.KFun 5) []))  -> startLabelInput ip l
-    (T.VtyEvent (V.EvKey (V.KFun 6) []))  -> startMilestoneInput ip l
-    (T.VtyEvent (V.EvKey (V.KFun 7) []))  -> startOwnerInput ip l
-    (T.VtyEvent (V.EvKey (V.KFun 8) []))  -> startWeightInput ip l
+    (T.VtyEvent (V.EvKey (V.KChar 't') []))  -> startTitleInput ip l
+    (T.VtyEvent (V.EvKey (V.KChar 'l') []))  -> startLabelInput ip l
+    (T.VtyEvent (V.EvKey (V.KChar 'm') []))  -> startMilestoneInput ip l
+    (T.VtyEvent (V.EvKey (V.KChar 'o') []))  -> startOwnerInput ip l
+    (T.VtyEvent (V.EvKey (V.KChar 'w') []))  -> startWeightInput ip l
     _ ->
       liftHandler typed ip IssueView
         (demote (view typed l) internalIssuePageHandler) l e
