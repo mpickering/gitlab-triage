@@ -297,9 +297,9 @@ drawUpdates (Updates c EditIssue{..}) =
     rows = [ changeRow "Status" eiStatus showR
            , changeRow "Title" eiTitle showR
            , changeRow "Description" eiDescription (const (txt "changed"))
-           , changeRow "Labels" eiLabels showR
-           , changeRow "Weight" eiWeight showR
-           , changeRow "Owners" eiAssignees showR
+           , changeRow "Labels" eiLabels drawLabels
+           , changeRow "Weight" eiWeight drawWeight
+           , changeRow "Owners" eiAssignees drawOwners
            , changeRow "Milestone" eiMilestoneId showR
            , changeRow "Comment" c (txt . view (typed @T.Text)) ]
 
