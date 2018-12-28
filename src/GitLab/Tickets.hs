@@ -120,11 +120,6 @@ data IssueResp
 ]
 -}
 
-type GetIssueAPI =
-    GitLabRoot :> "projects"
-    :> Capture "id" ProjectId :> "issues"
-    :> QueryParam "scope" Scope
-    :> Get '[JSON] [IssueResp]
 
 type Scope = Text
 
@@ -159,9 +154,88 @@ instance FromJSON IssueResp where
                 <*> o .: "created_at"
                 <*> o .: "weight"
 
-getIssue :: AccessToken -> ProjectId -> ClientM [IssueResp]
-getIssue tok prj =
-    client (Proxy :: Proxy GetIssueAPI) (Just tok) prj (Just "all")
+data GetIssuesParams
+  = GetIssuesParams
+      { gipState :: Maybe StateParam
+      , gipLabels :: Maybe LabelParam
+      , gipMilestone :: Maybe MilestoneParam
+      , gipScope :: Maybe ScopeParam
+      , gipAuthor :: Maybe UserId
+      , gipAssignee :: Maybe AssigneeParam
+      , gipWeight :: Maybe Int
+      }
+
+defaultSearchParams :: GetIssuesParams
+defaultSearchParams =
+  GetIssuesParams
+    Nothing
+    Nothing
+    Nothing
+    (Just AllScope)
+    Nothing
+    Nothing
+    Nothing
+
+
+data StateParam = Open | Closed
+
+instance ToHttpApiData StateParam where
+  toQueryParam Open = "opened"
+  toQueryParam Closed = "closed"
+  toUrlPiece = toQueryParam
+
+data LabelParam = WithLabels [Text] | NoLabels | AnyLabel
+
+instance ToHttpApiData LabelParam where
+    toQueryParam (WithLabels ls) = T.intercalate "," ls
+    toQueryParam NoLabels = "None"
+    toQueryParam AnyLabel = "Any"
+
+data MilestoneParam = WithMilestone Text | NoMilestone | AnyMilestone
+
+instance ToHttpApiData MilestoneParam where
+    toQueryParam (WithMilestone t) =  t
+    toQueryParam NoMilestone = "None"
+    toQueryParam AnyMilestone = "Any"
+
+data ScopeParam = CreatedByMe | AssignedToMe | AllScope
+
+instance ToHttpApiData ScopeParam where
+  toQueryParam CreatedByMe = "created_by_me"
+  toQueryParam AssignedToMe = "assigned_to_me"
+  toQueryParam AllScope = "all"
+
+data AssigneeParam = AssignedTo UserId | AssignedNone | AssignedAny
+
+instance ToHttpApiData AssigneeParam where
+  toQueryParam (AssignedTo uid) = toQueryParam uid
+  toQueryParam AssignedNone = "None"
+  toQueryParam AssignedAny  = "Any"
+
+
+type GetIssueAPI =
+    GitLabRoot :> "projects"
+    :> Capture "id" ProjectId :> "issues"
+    :> QueryParam "scope" ScopeParam
+    :> QueryParam "state" StateParam
+    :> QueryParam "labels" LabelParam
+    :> QueryParam "milestone" MilestoneParam
+    :> QueryParam "author_id" UserId
+    :> QueryParam "assignee_id" AssigneeParam
+    :> QueryParam "weight" Int
+    :> Get '[JSON] [IssueResp]
+
+
+getIssues :: GetIssuesParams -> AccessToken -> ProjectId -> ClientM [IssueResp]
+getIssues GetIssuesParams{..} tok prj =
+    client (Proxy :: Proxy GetIssueAPI) (Just tok) prj
+      gipScope
+      gipState
+      gipLabels
+      gipMilestone
+      gipAuthor
+      gipAssignee
+      gipWeight
 
 type GetOneIssueAPI =
     GitLabRoot :> "projects"

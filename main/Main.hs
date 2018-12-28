@@ -129,7 +129,7 @@ initialise c = do
 
 loadTicketList :: AppConfig -> IO TicketList
 loadTicketList conf = do
-  es <- runQuery conf getIssue
+  es <- runQuery conf (getIssues defaultSearchParams)
   return $ TicketList (L.list IssueList (Vec.fromList es) 1)
 
 setupState :: IO AppState
