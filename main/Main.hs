@@ -240,12 +240,15 @@ drawIssuePage fm l =
                   metaRow "Author" (drawAuthor irAuthor)
                 , metaRow "State" (changed txt irState (newState <$> eiStatus))
                 , metaRow "Created" (txt irCreatedAt)
-                , metaRow "Updated" (txt irUpdatedAt) ]
+                , metaRow "Updated" (txt irUpdatedAt)
+                , metaRow "Milestone" (changed drawMilestone irMilestone eiMilestone)]
 
     metainfo2 = [ metaRow "Owner" (changed drawOwners irAssignees eiAssignees)
                 , metaRow "Labels" (changed drawLabels irLabels eiLabels)
                 , metaRow "Related" (drawRelated (view (field @"links") l))
-                , metaRow "Weight" (changed drawWeight irWeight eiWeight) ]
+                , metaRow "Weight" (changed drawWeight irWeight eiWeight)
+                , metaRow "" (txt " ")
+                ]
 
     metainfo = joinBorders $
         vBox [  titleBox
@@ -265,6 +268,10 @@ drawIssuePage fm l =
 changed :: (a -> Widget n) -> a -> Maybe a -> Widget n
 changed f v Nothing = f v
 changed f _ (Just c) = withAttr "changed" $ f c
+
+drawMilestone :: Maybe Milestone -> Widget n
+drawMilestone Nothing = txt " "
+drawMilestone (Just (Milestone t _)) = txt t
 
 drawWeight :: Maybe Int -> Widget n
 drawWeight Nothing = txt " "
@@ -300,7 +307,7 @@ drawUpdates (Updates c EditIssue{..}) =
            , changeRow "Labels" eiLabels drawLabels
            , changeRow "Weight" eiWeight drawWeight
            , changeRow "Owners" eiAssignees drawOwners
-           , changeRow "Milestone" eiMilestoneId showR
+           , changeRow "Milestone" eiMilestone drawMilestone
            , changeRow "Comment" c (txt . view (typed @T.Text)) ]
 
     changeRow :: T.Text -> Maybe a -> (a -> Widget n) -> Maybe (Widget n)
@@ -406,7 +413,7 @@ dispatchDialogInput (MilestoneDialog mac) l =
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
       traceShowM mid
-      M.continue $ set (issueEdit . field @"eiMilestoneId") (Just mid) (resetDialog l)
+      M.continue $ set (issueEdit . field @"eiMilestone") (Just mid) (resetDialog l)
 dispatchDialogInput (OwnerDialog mac) l =
   let ms = view (field @"users") l
       tc = view (field @"autocompleteCursor") mac
@@ -472,7 +479,7 @@ dispatchFooterInput FMilestone tc l =
     Nothing  -> M.continue (resetFooter l)
     Just mid -> do
       traceShowM mid
-      M.continue $ set (issueEdit . field @"eiMilestoneId") (Just mid) (resetFooter l)
+      M.continue $ set (issueEdit . field @"eiMilestone") (Just mid) (resetFooter l)
 dispatchFooterInput FWeight tc l =
   case checkWeightInput (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
@@ -508,14 +515,16 @@ lookupUser t (m:ms) = if view (field @"userUsername") m == t
 
 checkMilestoneInput :: T.Text
                     -> [MilestoneResp]
-                    -> Maybe (Maybe MilestoneId)
+                    -> Maybe (Maybe Milestone)
 checkMilestoneInput t _ | T.null (T.strip t) = Just Nothing
 checkMilestoneInput t mr = Just $ lookupMilestone (T.strip t) mr
 
-lookupMilestone :: T.Text -> [MilestoneResp] -> Maybe MilestoneId
+lookupMilestone :: T.Text -> [MilestoneResp] -> Maybe Milestone
 lookupMilestone _ [] = Nothing
 lookupMilestone t (m:ms) = if view (field @"mrTitle") m == t
-                              then Just (view (field @"mrId") m)
+                              then Just $ Milestone
+                                        (view (field @"mrTitle") m)
+                                        (view (field @"mrId") m)
                               else lookupMilestone t ms
 
 checkLabelInput :: T.Text -> Maybe Labels

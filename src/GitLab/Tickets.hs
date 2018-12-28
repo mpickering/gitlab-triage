@@ -220,7 +220,7 @@ createIssue tok sudo prj ci =
 data EditIssue
     = EditIssue { eiTitle       :: Maybe Text
                 , eiDescription :: Maybe Text
-                , eiMilestoneId :: Maybe (Maybe MilestoneId)
+                , eiMilestone :: Maybe (Maybe Milestone)
                 , eiLabels      :: Maybe Labels
                 , eiStatus      :: Maybe StatusEvent
                 , eiUpdateTime  :: Maybe UTCTime
@@ -239,7 +239,7 @@ instance ToJSON EditIssue where
         $ catMaybes
         [ "title" .=? eiTitle
         , "description" .=? eiDescription
-        , "milestone_id" .=? eiMilestoneId
+        , "milestone_id" .=? fmap (fmap (\(Milestone _ mid) -> mid)) (eiMilestone)
         , "labels" .=? eiLabels
         , "state_event" .=? eiStatus
         , "updated_at" .=? eiUpdateTime
