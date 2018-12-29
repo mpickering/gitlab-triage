@@ -27,10 +27,7 @@ import qualified Brick.Types as T
 import qualified Brick.Widgets.Border as B
 import qualified Brick.Widgets.List as L
 import qualified Brick.Widgets.Center as C
-import qualified Data.Vector as Vec
-import Brick.Types
-  ( Widget
-  )
+import Brick.Types ( Widget )
 import Data.Generics.Product
 import Control.Monad.IO.Class (liftIO)
 
@@ -45,11 +42,6 @@ import Autocomplete
 import Common
 import Parsers
 
-loadTicketList :: GetIssuesParams -> AppConfig -> IO TicketList
-loadTicketList sp conf = do
-  es <- runQuery conf (getIssues sp)
-  return $ TicketList (L.list IssueList (Vec.fromList es) 1)
-                      sp
 
 
 ticketListHandler :: TicketList -> Handler OperationalState

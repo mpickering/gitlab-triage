@@ -13,28 +13,19 @@ module Autocomplete(mkAutocomplete
                    , handleAutocompleteEvent) where
 
 import Brick hiding (continue, halt)
-import Brick.Forms
 
-import Control.Lens (view, ALens,  to, set, cloneLens, Traversal')
-import Control.Monad (void)
-import Data.Maybe (fromMaybe, catMaybes)
+import Control.Lens (set)
+import Data.Maybe (fromMaybe)
 import qualified Graphics.Vty as V
 
-import qualified Brick.Main as M
 import qualified Brick.Types as T
-import qualified Brick.Widgets.Border as B
 import qualified Brick.Widgets.List as L
-import qualified Brick.Widgets.Center as C
-import qualified Brick.AttrMap as A
 import qualified Data.Vector as Vec
 import Brick.Types
   ( Widget
   )
-import Brick.Util (fg, on)
-
 import Cursor.Text
-import Data.Text(Text, isPrefixOf)
-import qualified Data.Vector as Vec
+import Data.Text(Text)
 
 import Data.Generics.Product
 import GHC.Generics
@@ -63,14 +54,6 @@ mkAutocomplete s m tt ini ns1 ns2 = Autocomplete s
                                 ns1
                                 (L.list ns2 (Vec.fromList s) 1)
 
-l = ["abcde", "abc", "def"]
-testAutocomplete = Autocomplete l
-                                (\t s -> filter (t `isPrefixOf`) s)
-                                id
-                                emptyTextCursor
-                                False
-                                (L.list True (Vec.fromList l) 1)
-
 drawAutocomplete ::
   forall s n a .
   (Show n, Ord n)
@@ -85,6 +68,7 @@ drawAutocomplete Autocomplete{..} =
     renderItem :: Bool -> a -> Widget n
     renderItem _ = txt . autocompleteToText
 
+newCursor :: Text -> TextCursor
 newCursor = fromMaybe emptyTextCursor . makeTextCursor
 
 handleAutocompleteEvent
@@ -109,51 +93,13 @@ handleAutocompleteEvent ac (VtyEvent e) = do
             V.KDel -> return $ updateAutocompleteItems ac2
             _ -> return ac2
         _ -> return ac2
+handleAutocompleteEvent ac _ = return ac
 
 updateAutocompleteItems :: Autocomplete s n a -> Autocomplete s n a
 updateAutocompleteItems ac@Autocomplete{..} =
-  let txt = rebuildTextCursor autocompleteCursor
-      matches = Vec.fromList (autocompleteMatches txt autocompleteState)
+  let new_txt = rebuildTextCursor autocompleteCursor
+      matches = Vec.fromList (autocompleteMatches new_txt autocompleteState)
   in over (field @"autocompleteList" ) (L.listReplace matches (Just 0)) ac
-
-theMap :: s -> A.AttrMap
-theMap _ = A.attrMap V.defAttr
-    [ (L.listAttr,            V.white `on` V.blue)
-    , (L.listSelectedAttr,    V.blue `on` V.white)
-    , (invalidFormInputAttr, V.white `on` V.red)
-    , (focusedFormInputAttr, V.black `on` V.yellow)
-    , ("default", V.defAttr )
-    ]
-
-handle
-  :: (Ord n, Show n)
-  => Autocomplete s n a
-  -> BrickEvent n e
-  -> EventM n (Next (Autocomplete s n a))
-handle s e1@(VtyEvent e) = do
-  case e of
-    V.EvKey V.KEsc [] -> M.halt s
-    _ -> handleAutocompleteEvent s e1 >>= M.continue
-handle s _ = M.continue s
-
-app :: App (Autocomplete [Text] Bool Text) () Bool
-app = App (\ac -> [drawAutocomplete ac])
-                  showFirstCursor
-                  handle
-                  return
-                  theMap
-
-
-
-main = defaultMain app  testAutocomplete
-
-
-
-modifyAutocompleteState :: (s -> s) -> Autocomplete s n a -> Autocomplete s n a
-modifyAutocompleteState f a = a { autocompleteState = f (autocompleteState a) }
-
-
-
 
 {- Text Cursor by Tom Kerokove -}
 
