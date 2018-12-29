@@ -26,7 +26,7 @@ import Data.Default
 import Brick hiding (continue, halt)
 import Brick.Forms
 
-import Control.Lens (view, ALens,  to, set, cloneLens, Traversal')
+import Control.Lens (view, ALens,  to, set, cloneLens, Traversal', firstOf)
 import Control.Monad (void)
 import Data.Maybe (fromMaybe, catMaybes, listToMaybe)
 import qualified Graphics.Vty as V
@@ -507,8 +507,17 @@ dispatchDialogInput (SearchParamsDialog check place mac) l =
   case check (rebuildTextCursor tc) of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
-      M.continue $ set (typed @Mode . _Ctor @"TicketListView"
+      let new_state = set (typed @Mode . _Ctor @"TicketListView"
                        . cloneLens place) (Just mid) (resetDialog l)
+          search_params =
+            case firstOf (typed @Mode . _Ctor @"TicketListView" . typed @GetIssuesParams)
+                         new_state of
+              Just s -> s
+              -- This should never happen
+              Nothing -> defaultSearchParams
+
+      tl <- liftIO $ loadTicketList search_params (view (typed @AppConfig) new_state)
+      M.continue (set typed (TicketListView tl) new_state)
 dispatchDialogInput NoDialog _ = error "NoDialog when handling dialog event"
 
 
@@ -674,7 +683,17 @@ startLabelDialog tl l =
         "any"  -> Just AnyLabel
         ts     -> WithLabels <$> checkLabelInput ts
 
-startMilestoneDialog = undefined
+startMilestoneDialog tl l =
+  startDialog txtMilestoneParam checkMilestone (field @"params" . field @"gipMilestone")
+              ([NoMilestone, AnyMilestone] ++ ms) tl l
+  where
+    ms = WithMilestone . view (field @"mrTitle") <$> view (field @"milestones") l
+
+    checkMilestone t =
+      case t of
+        "None" -> Just NoMilestone
+        "Any"  -> Just AnyMilestone
+        t -> Just (WithMilestone t)
 startAuthorDialog = undefined
 startOwnerDialog = undefined
 startWeightDialog = undefined
