@@ -9,7 +9,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ViewPatterns #-}
-module Main where
+module Main(main) where
 
 import GitLab.Tickets
 import GitLab.Users
@@ -168,10 +168,6 @@ drawMain l =
         TicketListView ts -> drawTicketList l ts
         IssueView st -> drawIssueView (view (typed @FooterMode) l) st)
 
-
-
-errorPage :: Widget n -> Widget n
-errorPage reason = str "Error: " <+> reason
 
 drawDialog :: DialogMode -> Widget Name
 drawDialog NoDialog = emptyWidget
@@ -737,15 +733,6 @@ appEvent a@(AppState mm) ev =
   case mm of
     Setup f cfg -> setupHandler f cfg a ev
     Operational o -> liftHandler typed o Operational handleMain a ev
-
-
-
-setMode :: Mode -> OperationalState -> OperationalState
-setMode = set typed
-
-
-
-
 
 
 {- Text Cursor -}
