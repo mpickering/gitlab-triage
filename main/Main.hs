@@ -37,7 +37,6 @@ import qualified Brick.Widgets.Border as B
 import qualified Brick.Widgets.List as L
 import qualified Brick.Widgets.Center as C
 import qualified Brick.AttrMap as A
-import qualified Data.Vector as Vec
 import Brick.Types
   ( Widget
   )
@@ -50,10 +49,7 @@ import Control.Monad.IO.Class (liftIO)
 
 import Cursor.Text
 
-import Text.Megaparsec
-import Text.Megaparsec.Char
 import Control.Applicative.Combinators ()
-import Text.Megaparsec.Char.Lexer (decimal)
 
 import Control.Monad.Reader
 
@@ -72,6 +68,9 @@ import Config
 import Model
 import SetupForm
 import Autocomplete
+import TicketList
+import Common
+import Parsers
 import Debug.Trace
 
 
@@ -129,11 +128,6 @@ initialise c = do
                                          labels milestones users conf)
   return $ AppState mm
 
-loadTicketList :: GetIssuesParams -> AppConfig -> IO TicketList
-loadTicketList sp conf = do
-  es <- runQuery conf (getIssues sp)
-  return $ TicketList (L.list IssueList (Vec.fromList es) 1)
-                      sp
 
 setupState :: IO AppState
 setupState = do
@@ -174,99 +168,6 @@ drawMain l =
         TicketListView ts -> drawTicketList l ts
         IssueView st -> drawIssueView (view (typed @FooterMode) l) st)
 
--- | Draw the ticket list page
-drawTicketList :: OperationalState -> TicketList -> [Widget Name]
-drawTicketList l tl = [ui]
-  where
-    issues = view (field @"issues") tl
-
-    params = view (field @"params") tl
-
-    searchBox = drawSearchBox params
-
-    --total = str $ show $ Vec.length $ view L.listElementsL issues
-
-    box = B.border . vBox $ [
-            L.renderList drawTicketRow True issues
-            , B.hBorder
-            , searchBox
-            , B.hBorder
-            , footer (view typed l) ]
-
-    ui = C.vCenter $ vBox [ C.hCenter box
-                          ]
-
-drawSearchBox :: GetIssuesParams -> Widget n
-drawSearchBox GetIssuesParams{..} =
-  vBox [ row "(S)tate" drawState gipState
-       , row "S(c)ope" drawScope gipScope
-       , row "(L)abels" drawLabelParam gipLabels
-       , row "(M)ilestone" drawMilestoneParam gipMilestone
-       , row "(A)uthor" drawAuthorParam gipAuthor
-       , row "(O)wner" drawAssigneeParam gipAssignee
-       , row "(W)eight" drawWeightParam gipWeight
-       ]
-  where
-    row herald f w = txt herald <+> txt ": " <+> maybe emptyWidget f w
-
-txtState :: StateParam -> T.Text
-txtState Open = "Open"
-txtState Closed = "Closed"
-
-drawState :: StateParam -> Widget n
-drawState = txt . txtState
-
-txtScope :: ScopeParam -> T.Text
-txtScope CreatedByMe  = "Created by me"
-txtScope AssignedToMe = "Assigned to me"
-txtScope AllScope = "All"
-
-drawScope :: ScopeParam -> Widget n
-drawScope = txt . txtScope
-
-txtLabelParam :: LabelParam -> T.Text
-txtLabelParam l =
-  case l of
-    WithLabels (Labels ts) -> T.intercalate ", " (S.toList ts)
-    NoLabels -> "None"
-    AnyLabel -> "Any"
-
-drawLabelParam :: LabelParam -> Widget n
-drawLabelParam = txt . txtLabelParam
-
-txtMilestoneParam :: MilestoneParam -> T.Text
-txtMilestoneParam m =
-  case m of
-    WithMilestone t -> t
-    NoMilestone  -> "None"
-    AnyMilestone -> "Any"
-
-drawMilestoneParam :: MilestoneParam -> Widget n
-drawMilestoneParam = txt . txtMilestoneParam
-
-txtAuthorParam :: User -> T.Text
-txtAuthorParam u = view (field @"userUsername") u
-
-drawAuthorParam :: User -> Widget n
-drawAuthorParam = txt . txtAuthorParam
-
-txtAssigneeParam :: AssigneeParam -> T.Text
-txtAssigneeParam a =
-  case a of
-    AssignedTo u -> view (field @"userUsername") u
-    AssignedNone -> "None"
-    AssignedAny -> "Any"
-
-drawAssigneeParam :: AssigneeParam -> Widget n
-drawAssigneeParam = txt . txtAssigneeParam
-
-txtWeightParam :: Int -> T.Text
-txtWeightParam = T.pack . show
-
-drawWeightParam :: Int -> Widget n
-drawWeightParam = txt . txtWeightParam
-
-
 
 
 errorPage :: Widget n -> Widget n
@@ -289,12 +190,6 @@ drawAutocompleteDialog ac = dBox
 drawIssueView :: FooterMode -> IssuePage -> [Widget Name]
 drawIssueView fm l = [drawIssuePage fm l]
 
-drawTicketRow :: Bool -> IssueResp -> Widget n
-drawTicketRow _ IssueResp{..} =
-    vLimit 1 $ hBox
-        [ hLimit 6 $ padRight Max $ int (unIssueIid irIid)
-        , padRight Max $ txt irTitle
-        , padLeft (Pad 1) $ txt irState]
 
 drawIssuePage :: FooterMode -> IssuePage -> Widget Name
 drawIssuePage fm l =
@@ -597,8 +492,6 @@ resetDialog l = (set typed NoDialog l)
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
 
-issueView :: OperationalState -> IssuePage -> OperationalState
-issueView l n = set (field @"mode") (IssueView n) l
 
 checkUserInput :: T.Text
                -> [User]
@@ -608,11 +501,6 @@ checkUserInput t mr =
   Just $ maybe [] (:[]) (lookupUser (T.strip t) mr)
 
 
-lookupUser :: T.Text -> [User] -> Maybe User
-lookupUser _ [] = Nothing
-lookupUser t (m:ms) = if view (field @"userUsername") m == t
-                              then Just m
-                              else lookupUser t ms
 
 checkMilestoneInput :: T.Text
                     -> [MilestoneResp]
@@ -628,161 +516,6 @@ lookupMilestone t (m:ms) = if view (field @"mrTitle") m == t
                                         (view (field @"mrId") m)
                               else lookupMilestone t ms
 
-checkLabelInput :: T.Text -> Maybe Labels
-checkLabelInput t =
-  Labels . S.fromList <$> parseMaybe @() (sepBy plabel (string ",")) t
-  where
---    label :: ParsecT () T.Text Identity T.Text
-    plabel = T.pack <$> (space *> (some alphaNumChar) <* space)
-
-checkGotoInput :: T.Text -> Maybe IssueIid
-checkGotoInput t = IssueIid <$> parseMaybe @() decimal t
-
-checkWeightInput :: T.Text -> Maybe (Maybe Int)
-checkWeightInput "" = Just Nothing
-checkWeightInput t = Just <$> parseMaybe @() decimal t
-
-checkTitleInput :: T.Text -> Maybe T.Text
-checkTitleInput "" = Nothing
-checkTitleInput t  = Just t
-
-
-ticketListHandler :: TicketList -> Handler OperationalState
-ticketListHandler tl l (T.VtyEvent e) =
-  case e of
-    V.EvKey V.KEsc [] -> M.halt l
-    V.EvKey V.KEnter [] -> ticketListEnter tl l
-    V.EvKey (V.KChar 's') [] -> M.continue (startStateDialog tl l)
-    V.EvKey (V.KChar 'c') [] -> M.continue (startScopeDialog tl l)
-    V.EvKey (V.KChar 'l') [] -> M.continue (startLabelDialog tl l)
-    V.EvKey (V.KChar 'm') [] -> M.continue (startMilestoneDialog tl l)
-    V.EvKey (V.KChar 'a') [] -> M.continue (startAuthorDialog tl l)
-    V.EvKey (V.KChar 'o') [] -> M.continue (startOwnerDialog tl l)
-    V.EvKey (V.KChar 'w') [] -> M.continue (startWeightDialog tl l)
-    _ -> do
-      res <- L.handleListEvent e (view typed tl)
-      let tl' = set (field @"issues") res tl
-      M.continue (set typed (TicketListView tl') l)
-ticketListHandler _ l _ = M.continue l
-
-startScopeDialog, startLabelDialog,
-  startMilestoneDialog, startAuthorDialog,
-  startOwnerDialog, startWeightDialog
-  :: TicketList
-  -> OperationalState
-  -> OperationalState
-
-
-startScopeDialog =
-  startDialog txtScope checkScope (field @"params" . field @"gipScope")
-              [AllScope, CreatedByMe, AssignedToMe]
-  where
-    checkScope (T.toLower -> t) =
-      case t of
-        "all" -> Just AllScope
-        "created by me" -> Just CreatedByMe
-        "assigned to me" -> Just AssignedToMe
-        _ -> Nothing
-
-startLabelDialog tl l =
-  startDialog txtLabelParam checkLabel (field @"params" . field @"gipLabels")
-              ([NoLabels, AnyLabel] ++ ls) tl l
-  where
-    ls = WithLabels . mkLabel . view (field @"lrName")
-          <$> view (field @"labels") l
-
-    checkLabel (T.toLower -> t) =
-      case t of
-        "none" -> Just NoLabels
-        "any"  -> Just AnyLabel
-        ts     -> WithLabels <$> checkLabelInput ts
-
-startMilestoneDialog tl l =
-  startDialog txtMilestoneParam checkMilestone (field @"params" . field @"gipMilestone")
-              ([NoMilestone, AnyMilestone] ++ ms) tl l
-  where
-    ms = WithMilestone . view (field @"mrTitle") <$> view (field @"milestones") l
-
-    checkMilestone t =
-      case t of
-        "None" -> Just NoMilestone
-        "Any"  -> Just AnyMilestone
-        _      -> Just (WithMilestone t)
-
-startAuthorDialog tl l =
-  startDialog txtAuthorParam checkAuthor (field @"params" . field @"gipAuthor")
-              us tl l
-  where
-    us = view (field @"users") l
-
-    checkAuthor t = lookupUser t us
-
-startOwnerDialog tl l =
-  startDialog txtAssigneeParam checkAssignee (field @"params" . field @"gipAssignee")
-              ([AssignedNone, AssignedAny] ++ as) tl l
-  where
-    us = view (field @"users") l
-
-    as = map AssignedTo us
-
-    checkAssignee t =
-      case T.toLower t of
-        "none" -> Just AssignedNone
-        "any"  -> Just AssignedAny
-        _      -> AssignedTo <$> lookupUser t us
-
-startWeightDialog tl l =
-  startDialog txtWeightParam checkWeight (field @"params" . field @"gipWeight")
-            [0..100] tl l
-  where
-    checkWeight :: T.Text -> Maybe Int
-    checkWeight t = parseMaybe @() decimal t
-
-
-
-startDialog :: (a -> T.Text)
-            -> (T.Text -> Maybe a)
-            -> ALens TicketList TicketList (Maybe a) (Maybe a)
-            -> [a]
-            -> TicketList
-            -> OperationalState
-            -> OperationalState
-startDialog draw check place ini tl l =
-  let ini_state = view (cloneLens place) tl
-      state_t = draw <$> ini_state
-
-      ac =
-        mkAutocomplete
-          ini
-          (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s)
-          draw
-          state_t
-          (Dialog (MilestoneName False))
-          (Dialog (MilestoneName True))
-
-  in set typed (SearchParamsDialog check place ac) l
-
-startStateDialog :: TicketList -> OperationalState -> OperationalState
-startStateDialog =
-  startDialog txtState
-              (checkStateInput . T.toLower)
-              (field @"params" . field @"gipState")
-              [Open, Closed]
-  where
-    checkStateInput "open" = Just Open
-    checkStateInput "closed" = Just Closed
-    checkStateInput _ = Nothing
-
-ticketListEnter :: TicketList
-                -> OperationalState
-                -> T.EventM Name (T.Next OperationalState)
-ticketListEnter tl o = do
-  let cursorTicket = view (field @"issues" . to L.listSelectedElement) tl
-  case cursorTicket of
-    Nothing -> M.continue o
-    Just (_, t) ->
-      liftIO (loadByIssueResp t (view (typed @AppConfig) o)) >>=
-            M.continue . issueView o
 
 -- Events which operate only on internal state
 internalIssuePageHandler :: HandlerR IssuePage
@@ -1011,40 +744,8 @@ setMode :: Mode -> OperationalState -> OperationalState
 setMode = set typed
 
 
-{- drawing helpers -}
-
-int :: Int -> Widget n
-int = str . show
-
-showR :: Show a => a -> Widget n
-showR = str . show
-
-drawDate :: T.Text -> Widget a
-drawDate = txt
 
 
-{- Running external queries -}
-
-runQuery :: AppConfig -> (AccessToken -> ProjectId -> ClientM a) -> IO a
-runQuery l q = do
-  let tok   = view (field @"userConfig" . field @"token") l
-      reqEnv  = view (field @"reqEnv") l
-      project = view (field @"userConfig" . field @"project") l
-  res <- runClientM (q tok project) reqEnv
-  return (either (error . show) id res)
-
-loadByIid :: IssueIid -> AppConfig -> IO IssuePage
-loadByIid iid ac = do
-  r <- runQuery ac (getOneIssue iid)
-  loadByIssueResp r ac
-
-loadByIssueResp :: IssueResp -> AppConfig -> IO IssuePage
-loadByIssueResp t l = do
-  let iid = view (field @"irIid") t
-  es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
-  links <- runQuery l (\tok prj -> listIssueLinks tok prj iid)
-  let emptyUpdates = Updates Nothing noEdits
-  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t emptyUpdates links)
 
 
 {- Text Cursor -}
@@ -1093,27 +794,6 @@ theMap _ = A.attrMap V.defAttr
     ]
 
 
-{- Handler definitions -}
-
-type Handler' s k =
-  s
-  -> T.BrickEvent Name ()
-  -> T.EventM Name (T.Next k)
-
-type HandlerR' s k =
-  s
-  -> T.BrickEvent Name ()
-  -> ReaderT AppConfig (T.EventM Name) (T.Next k)
-
-type Handler s = Handler' s s
-
-type HandlerR s = HandlerR' s s
-
-halt :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
-halt = lift . M.halt
-
-continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
-continue = lift . M.continue
 
 {-
 - External Editor

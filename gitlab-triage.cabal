@@ -25,7 +25,8 @@ library
 
 executable gitlab-triage
   main-is:             Main.hs
-  other-modules:       Config, SetupForm, Namespace, Model, Autocomplete
+  other-modules:       Config, SetupForm, Namespace, Model, Autocomplete,
+                       Common, TicketList, Parsers
   -- other-extensions:
   ghc-options: -threaded -Wall -O2
   build-depends:       base >=4.11
