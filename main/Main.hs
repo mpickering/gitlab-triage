@@ -253,7 +253,7 @@ drawAuthorParam = txt . txtAuthorParam
 txtAssigneeParam :: AssigneeParam -> T.Text
 txtAssigneeParam a =
   case a of
-    AssignedTo u -> view (field @"userName") u
+    AssignedTo u -> view (field @"userUsername") u
     AssignedNone -> "None"
     AssignedAny -> "Any"
 
@@ -501,14 +501,18 @@ dispatchDialogInput (OwnerDialog mac) l =
     Just mid -> do
       traceShowM mid
       M.continue $ set (issueEdit . field @"eiAssignees") (Just mid) (resetDialog l)
-dispatchDialogInput (SearchParamsDialog check place mac) l =
-  let tc = view (field @"autocompleteCursor") mac
-  in
-  case check (rebuildTextCursor tc) of
-    Nothing  -> M.continue (resetDialog l)
-    Just mid -> do
+dispatchDialogInput (SearchParamsDialog check place mac) l = do
+  if (T.null rbc)
+    then (update Nothing)
+    else (case check rbc of
+            Nothing  -> M.continue (resetDialog l)
+            Just mid -> update (Just mid))
+  where
+    tc = view (field @"autocompleteCursor") mac
+    rbc = rebuildTextCursor tc
+    update v = do
       let new_state = set (typed @Mode . _Ctor @"TicketListView"
-                       . cloneLens place) (Just mid) (resetDialog l)
+                       . cloneLens place) v (resetDialog l)
           search_params =
             case firstOf (typed @Mode . _Ctor @"TicketListView" . typed @GetIssuesParams)
                          new_state of
@@ -600,12 +604,14 @@ checkUserInput :: T.Text
                -> [User]
                -> Maybe [User]
 checkUserInput t _ | T.null (T.strip t) = Just []
-checkUserInput t mr = Just $ lookupUser (T.strip t) mr
+checkUserInput t mr =
+  Just $ maybe [] (:[]) (lookupUser (T.strip t) mr)
 
-lookupUser :: T.Text -> [User] -> [User]
-lookupUser _ [] = []
+
+lookupUser :: T.Text -> [User] -> Maybe User
+lookupUser _ [] = Nothing
 lookupUser t (m:ms) = if view (field @"userUsername") m == t
-                              then [m]
+                              then Just m
                               else lookupUser t ms
 
 checkMilestoneInput :: T.Text
@@ -659,6 +665,14 @@ ticketListHandler tl l (T.VtyEvent e) =
       M.continue (set typed (TicketListView tl') l)
 ticketListHandler _ l _ = M.continue l
 
+startScopeDialog, startLabelDialog,
+  startMilestoneDialog, startAuthorDialog,
+  startOwnerDialog, startWeightDialog
+  :: TicketList
+  -> OperationalState
+  -> OperationalState
+
+
 startScopeDialog =
   startDialog txtScope checkScope (field @"params" . field @"gipScope")
               [AllScope, CreatedByMe, AssignedToMe]
@@ -693,7 +707,7 @@ startMilestoneDialog tl l =
       case t of
         "None" -> Just NoMilestone
         "Any"  -> Just AnyMilestone
-        t -> Just (WithMilestone t)
+        _      -> Just (WithMilestone t)
 
 startAuthorDialog tl l =
   startDialog txtAuthorParam checkAuthor (field @"params" . field @"gipAuthor")
@@ -701,12 +715,30 @@ startAuthorDialog tl l =
   where
     us = view (field @"users") l
 
-    checkAuthor t =
-      case (lookupUser t us) of
-        [u] -> Just u
-        _   -> Nothing
-startOwnerDialog = undefined
-startWeightDialog = undefined
+    checkAuthor t = lookupUser t us
+
+startOwnerDialog tl l =
+  startDialog txtAssigneeParam checkAssignee (field @"params" . field @"gipAssignee")
+              ([AssignedNone, AssignedAny] ++ as) tl l
+  where
+    us = view (field @"users") l
+
+    as = map AssignedTo us
+
+    checkAssignee t =
+      case T.toLower t of
+        "none" -> Just AssignedNone
+        "any"  -> Just AssignedAny
+        _      -> AssignedTo <$> lookupUser t us
+
+startWeightDialog tl l =
+  startDialog txtWeightParam checkWeight (field @"params" . field @"gipWeight")
+            [0..100] tl l
+  where
+    checkWeight :: T.Text -> Maybe Int
+    checkWeight t = parseMaybe @() decimal t
+
+
 
 startDialog :: (a -> T.Text)
             -> (T.Text -> Maybe a)
