@@ -245,7 +245,7 @@ drawMilestoneParam :: MilestoneParam -> Widget n
 drawMilestoneParam = txt . txtMilestoneParam
 
 txtAuthorParam :: User -> T.Text
-txtAuthorParam u = view (field @"userName") u
+txtAuthorParam u = view (field @"userUsername") u
 
 drawAuthorParam :: User -> Widget n
 drawAuthorParam = txt . txtAuthorParam
@@ -694,7 +694,17 @@ startMilestoneDialog tl l =
         "None" -> Just NoMilestone
         "Any"  -> Just AnyMilestone
         t -> Just (WithMilestone t)
-startAuthorDialog = undefined
+
+startAuthorDialog tl l =
+  startDialog txtAuthorParam checkAuthor (field @"params" . field @"gipAuthor")
+              us tl l
+  where
+    us = view (field @"users") l
+
+    checkAuthor t =
+      case (lookupUser t us) of
+        [u] -> Just u
+        _   -> Nothing
 startOwnerDialog = undefined
 startWeightDialog = undefined
 
