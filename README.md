@@ -13,33 +13,8 @@ Features
 
 TODO
 
-1. Implement remaining ticket edit options
-  * milestone - unsure about the format here
-  * labels    - need to lookup labels but they are just text
-      *  https://docs.gitlab.com/ee/api/labels.html
-    - Need to implement autocomplete widget really
-  * weight  -- Just an Int
-  * owners - Need to lookup user to get ID -- findUserByUsername, done
-
-Need to reflect updates in initial values for everything but
-* Open/close
-* desc
-* comment
-
-TODO
-* labels
-* miletones
-* title
-* owner
-* weight
-
-2. Ticket filtering
-  * State
-  * label
-  * milestone
-  * author
-  * owner
-  * weight
-  * sorting
-  * search
-
+* Cleanup the footer input like dialog input
+* Cleanup footer event handling so it can be moved into seperate modules
+* Error handling for failed http requests
+* Footer to ticket list page
+* Caching for HTTP requests (medium priority)

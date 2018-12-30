@@ -62,11 +62,9 @@ data FooterMode = FooterInfo  -- Display generic info
                 deriving Generic
 
 data FooterInputMode = FGoto
-                     | FTitle
-                     | FLabels
-                     | FMilestone
-                     | FWeight
-                     deriving Generic
+                      | forall a . FGen Text
+                                       (Text -> Maybe a)
+                                       (ALens EditIssue EditIssue (Maybe a) (Maybe a))
 
 type MilestoneAutocomplete = Autocomplete [MilestoneResp] Name MilestoneResp
 type OwnerAutocomplete     = Autocomplete [User] Name User

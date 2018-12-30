@@ -48,6 +48,7 @@ import Model
 import Autocomplete
 import Common
 import TextCursor
+import Parsers
 import ExternalEditor
 
 
@@ -161,11 +162,9 @@ footer m = vLimit 1 $
 
 formatFooterMode :: FooterInputMode -> T.Text
 formatFooterMode m = case m of
-                       FGoto -> "g: "
-                       FTitle -> "title: "
-                       FLabels -> "labels: "
-                       FMilestone -> "milestone: "
-                       FWeight -> "weight: "
+                       FGoto      -> "g: "
+                       FGen h _ _ -> h <> ": "
+
 
 drawAuthor :: User -> Widget n
 drawAuthor  = txt . view (field @"userName")
@@ -267,6 +266,39 @@ issuePageHandler ip l e =
       liftHandler typed ip IssueView
         (demote (view typed l) internalIssuePageHandler) l e
 
+{-
+                       FGoto -> "g: "
+                       FTitle -> "title: "
+                       FLabels -> "labels: "
+                       FMilestone -> "milestone: "
+                       FWeight -> "weight: "
+
+
+dispatchFooterInput FTitle tc l =
+  case checkTitleInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just t -> do
+      M.continue $ set (issueEdit . field @"eiTitle") (Just t) (resetFooter l)
+dispatchFooterInput FLabels tc l =
+  case checkLabelInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just ls -> do
+      M.continue $ set (issueEdit . field @"eiLabels") (Just ls) (resetFooter l)
+dispatchFooterInput FMilestone tc l =
+  let ms = view (field @"milestones") l
+  in
+  case checkMilestoneInput (rebuildTextCursor tc) ms of
+    Nothing  -> M.continue (resetFooter l)
+    Just mid -> do
+      traceShowM mid
+      M.continue $ set (issueEdit . field @"eiMilestone") (Just mid) (resetFooter l)
+dispatchFooterInput FWeight tc l =
+  case checkWeightInput (rebuildTextCursor tc) of
+    Nothing -> M.continue (resetFooter l)
+    Just ls -> do
+      M.continue $ set (issueEdit . field @"eiWeight") (Just ls) (resetFooter l)
+                       -}
+
 startTitleInput :: IssuePage
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
@@ -274,8 +306,10 @@ startTitleInput tl l =
   let title_ini = view (typed @IssueResp . field @"irTitle") tl
       title_mod = view (typed @Updates . typed @EditIssue . field @"eiTitle") tl
       title_t = fromMaybe title_ini title_mod
+
+      dispatcher = FGen "title" checkTitleInput (field @"eiTitle")
   in M.continue (set typed
-                 (FooterInput FTitle
+                 (FooterInput dispatcher
                  (fromMaybe emptyTextCursor $ makeTextCursor title_t)) l)
 
 startLabelInput :: IssuePage
@@ -286,8 +320,10 @@ startLabelInput tl l =
       labels_mod = view (typed @Updates . typed @EditIssue . field @"eiLabels") tl
       (Labels cur_labels) = fromMaybe labels_ini labels_mod
       labels_t = T.intercalate ", " (S.toList cur_labels)
+
+      dispatcher = FGen "label" checkLabelInput (field @"eiLabels")
   in M.continue (set typed
-                 (FooterInput FLabels
+                 (FooterInput dispatcher
                  (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
 
 startWeightInput :: IssuePage
@@ -298,8 +334,10 @@ startWeightInput tl l =
       w_mod = view (typed @Updates . typed @EditIssue . field @"eiWeight") tl
       cur_w = fromMaybe w_ini w_mod
       weight_t = maybe (" ") (T.pack . show) cur_w
+
+      dispatcher = FGen "weight" checkWeightInput (field @"eiWeight")
   in M.continue (set typed
-                 (FooterInput FWeight
+                 (FooterInput dispatcher
                  (fromMaybe emptyTextCursor $ makeTextCursor weight_t)) l)
 
 milestoneAutocomplete :: [MilestoneResp]

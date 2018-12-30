@@ -47,8 +47,8 @@ import SetupForm
 import Autocomplete
 import TicketList
 import Common
-import Parsers
 import IssuePage
+import Parsers
 import TextCursor
 import SetupMode
 import Debug.Trace
@@ -256,29 +256,11 @@ dispatchFooterInput FGoto tc l =
     Just iid -> do
       (liftIO $ loadByIid iid (view typed l)) >>=
         M.continue . resetFooter . issueView l
-dispatchFooterInput FTitle tc l =
-  case checkTitleInput (rebuildTextCursor tc) of
-    Nothing -> M.continue (resetFooter l)
-    Just t -> do
-      M.continue $ set (issueEdit . field @"eiTitle") (Just t) (resetFooter l)
-dispatchFooterInput FLabels tc l =
-  case checkLabelInput (rebuildTextCursor tc) of
+dispatchFooterInput (FGen _ check place)  tc l =
+  case check (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
     Just ls -> do
-      M.continue $ set (issueEdit . field @"eiLabels") (Just ls) (resetFooter l)
-dispatchFooterInput FMilestone tc l =
-  let ms = view (field @"milestones") l
-  in
-  case checkMilestoneInput (rebuildTextCursor tc) ms of
-    Nothing  -> M.continue (resetFooter l)
-    Just mid -> do
-      traceShowM mid
-      M.continue $ set (issueEdit . field @"eiMilestone") (Just mid) (resetFooter l)
-dispatchFooterInput FWeight tc l =
-  case checkWeightInput (rebuildTextCursor tc) of
-    Nothing -> M.continue (resetFooter l)
-    Just ls -> do
-      M.continue $ set (issueEdit . field @"eiWeight") (Just ls) (resetFooter l)
+      M.continue $ set (issueEdit . cloneLens place) (Just ls) (resetFooter l)
 
 
 
