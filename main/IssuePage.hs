@@ -396,7 +396,7 @@ startMilestoneInput :: IssuePage
                     -> EventM Name (Next OperationalState)
 startMilestoneInput ip os =
   let milestones = view (field @"milestones") os
-      draw Nothing = " "
+      draw Nothing = ""
       draw (Just m) = view (field @"mrTitle") m
 
       place :: ALens IssuePage IssuePage (Maybe MilestoneResp)
