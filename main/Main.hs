@@ -171,7 +171,8 @@ handleDialogEvent dc l re  =
       M.continue (set (typed @DialogMode) (wrap mac') l)
 
 
-
+-- TODO: This duplication is a bit unsatisfactory and also the set is
+-- partial because it relies on being in specific mode.
 dispatchDialogInput :: DialogMode
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
