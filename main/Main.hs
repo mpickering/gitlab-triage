@@ -249,8 +249,6 @@ dispatchFooterInput (FGen _ check place)  tc l =
       M.continue $ set (issueEdit . cloneLens place) (Just ls) (resetFooter l)
 
 
-
-
 issueEdit :: Traversal' OperationalState EditIssue
 issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates" . typed @EditIssue
 
@@ -259,10 +257,6 @@ resetDialog l = (set typed NoDialog l)
 
 resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
-
-
-
-
 
 modeHandler :: Handler OperationalState
 modeHandler l e =
