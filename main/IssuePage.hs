@@ -365,32 +365,6 @@ ownerAutocomplete us ini =
     (Dialog (OwnerName True))
 
 
-{-
-startMilestoneInput :: IssuePage
-                    -> OperationalState
-                    -> EventM Name (Next OperationalState)
-startMilestoneInput tl l =
-  let milestone = view (typed @IssueResp . field @"irMilestone") tl
-      milestone_t = view (field @"mrTitle")  <$> milestone
-      milestones = view (field @"milestones") l
-      place = typed @IssueResp . field @"irMilestone"
-      dispatcher = IssuePageDialog (checkMilestoneInput milestones) place
-                                   (milestoneAutocomplete milestones milestone_t)
-  in M.continue (set typed
-                 (MilestoneDialog (milestoneAutocomplete milestones milestone_t))
-                 l)
-
-startOwnerInput :: IssuePage
-                    -> OperationalState
-                    -> EventM Name (Next OperationalState)
-startOwnerInput tl l =
-  let owner = view (typed @IssueResp . field @"irAssignees") tl
-      owner_t = listToMaybe (view (field @"userUsername") <$> owner)
-  in M.continue (set typed
-                 (OwnerDialog (ownerAutocomplete users owner_t))
-                 l)
-                 -}
-
 startMilestoneInput :: IssuePage
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
@@ -424,8 +398,6 @@ startOwnerInput ip os =
                  ip os
 
 
-
-
 startDialog :: (T.Text -> Maybe a)
             -> (a -> T.Text)
             -> (ALens IssuePage IssuePage (Maybe a) (Maybe a))
@@ -449,7 +421,6 @@ startDialog check draw upd_place cur_place ini ip os =
 
       dispatcher = IssuePageDialog check upd_place ac
   in M.continue (set typed dispatcher os)
-
 
 
 applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
