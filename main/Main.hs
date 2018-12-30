@@ -12,7 +12,6 @@
 module Main(main) where
 
 import GitLab.Tickets
-import GitLab.Users
 
 import qualified Data.Text as T
 
@@ -51,8 +50,6 @@ import IssuePage
 import Parsers
 import TextCursor
 import SetupMode
-import Debug.Trace
-
 
 main :: IO ()
 main = do
@@ -105,8 +102,7 @@ drawMain l =
 
 drawDialog :: DialogMode -> Widget Name
 drawDialog NoDialog = emptyWidget
-drawDialog (MilestoneDialog ac) = drawAutocompleteDialog ac
-drawDialog (OwnerDialog ac) = drawAutocompleteDialog ac
+drawDialog (IssuePageDialog _ _ ac) = drawAutocompleteDialog ac
 drawDialog (SearchParamsDialog _ _ ac) = drawAutocompleteDialog ac
 
 drawAutocompleteDialog :: (Ord n, Show n) => Autocomplete s n a -> Widget n
@@ -166,8 +162,7 @@ handleDialogEvent :: DialogMode
                   -> Handler OperationalState
 handleDialogEvent dc l re  =
   case dc of
-    MilestoneDialog mac -> do_one mac MilestoneDialog
-    OwnerDialog mac     -> do_one mac OwnerDialog
+    IssuePageDialog a1 a2 mac     -> do_one mac (\mac' -> IssuePageDialog a1 a2 mac')
     SearchParamsDialog a1 a2 mac -> do_one mac (\mac' -> SearchParamsDialog a1 a2 mac')
     NoDialog            -> error "Handling dialog events when not in dialog mode"
   where
@@ -180,24 +175,14 @@ handleDialogEvent dc l re  =
 dispatchDialogInput :: DialogMode
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
-dispatchDialogInput (MilestoneDialog mac) l =
-  let ms = view (field @"milestones") l
-      tc = view (field @"autocompleteCursor") mac
+dispatchDialogInput (IssuePageDialog check place mac) l =
+  let tc = view (field @"autocompleteCursor") mac
   in
-  case checkMilestoneInput (rebuildTextCursor tc) ms of
+  case check (rebuildTextCursor tc) of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
-      traceShowM mid
-      M.continue $ set (issueEdit . field @"eiMilestone") (Just mid) (resetDialog l)
-dispatchDialogInput (OwnerDialog mac) l =
-  let ms = view (field @"users") l
-      tc = view (field @"autocompleteCursor") mac
-  in
-  case checkUserInput (rebuildTextCursor tc) ms of
-    Nothing  -> M.continue (resetDialog l)
-    Just mid -> do
-      traceShowM mid
-      M.continue $ set (issueEdit . field @"eiAssignees") (Just mid) (resetDialog l)
+      M.continue $ set (typed @Mode . _Ctor @"IssueView" . cloneLens place)
+                       (Just mid) (resetDialog l)
 dispatchDialogInput (SearchParamsDialog check place mac) l = do
   if (T.null rbc)
     then (update Nothing)
@@ -275,19 +260,6 @@ resetFooter :: OperationalState -> OperationalState
 resetFooter l = (set typed FooterInfo l)
 
 
-checkUserInput :: T.Text
-               -> [User]
-               -> Maybe [User]
-checkUserInput t _ | T.null (T.strip t) = Just []
-checkUserInput t mr =
-  Just $ maybe [] (:[]) (lookupUser (T.strip t) mr)
-
-
-checkMilestoneInput :: T.Text
-                    -> [MilestoneResp]
-                    -> Maybe (Maybe Milestone)
-checkMilestoneInput t _ | T.null (T.strip t) = Just Nothing
-checkMilestoneInput t mr = Just $ lookupMilestone (T.strip t) mr
 
 
 
@@ -296,11 +268,6 @@ modeHandler l e =
   case view typed l of
     IssueView tl -> issuePageHandler tl l e
     TicketListView tl -> ticketListHandler tl l e
-
-
-
-
-
 
 
 {- Styles -}

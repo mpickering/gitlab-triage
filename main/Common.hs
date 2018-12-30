@@ -117,19 +117,6 @@ loadTicketList sp conf = do
 
 ---
 
-lookupUser :: T.Text -> [User] -> Maybe User
-lookupUser _ [] = Nothing
-lookupUser t (m:ms) = if view (field @"userUsername") m == t
-                              then Just m
-                              else lookupUser t ms
-
-lookupMilestone :: T.Text -> [MilestoneResp] -> Maybe Milestone
-lookupMilestone _ [] = Nothing
-lookupMilestone t (m:ms) = if view (field @"mrTitle") m == t
-                              then Just $ Milestone
-                                        (view (field @"mrTitle") m)
-                                        (view (field @"mrId") m)
-                              else lookupMilestone t ms
 
 
 {- drawing helpers -}

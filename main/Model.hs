@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
 module Model (module Model, module Config, module Namespace) where
 
 import Namespace
@@ -71,30 +72,17 @@ type OwnerAutocomplete     = Autocomplete [User] Name User
 
 type AppAutocomplete a = Autocomplete [a] Name a
 
-data DialogMode = NoDialog
-                | MilestoneDialog MilestoneAutocomplete
-                | OwnerDialog     OwnerAutocomplete
-                | forall a . SearchParamsDialog
-                    (Text -> Maybe a)
-                    (ALens TicketList TicketList (Maybe a) (Maybe a))
-                    (AppAutocomplete a)
-
-data SearchParamMode =
-  SPState
-{-
-  SP (AppAutocomplete
-      { gipState :: Maybe StateParam
-      , gipLabels :: Maybe LabelParam
-      , gipMilestone :: Maybe MilestoneParam
-      , gipScope :: Maybe ScopeParam
-      , gipAuthor :: Maybe User
-      , gipAssignee :: Maybe AssigneeParam
-      , gipWeight :: Maybe Int
-      } deriving (Generic, Show)
-      -}
-
-
-
+data DialogMode where
+  NoDialog :: DialogMode
+  IssuePageDialog ::
+    (Text -> Maybe a) ->
+    (ALens IssuePage IssuePage (Maybe a) (Maybe a)) ->
+    (AppAutocomplete a) -> DialogMode
+  SearchParamsDialog ::
+    (Text -> Maybe a) ->
+    (ALens TicketList TicketList (Maybe a) (Maybe a)) ->
+    (AppAutocomplete a) ->
+    DialogMode
 
 
 data AppConfig = AppConfig {

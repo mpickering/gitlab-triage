@@ -34,7 +34,7 @@ import GitLab.Users
 data IssueResp
     = IssueResp { irProjectId :: ProjectId
                 , irIid :: IssueIid
-                , irMilestone :: Maybe Milestone
+                , irMilestone :: Maybe MilestoneResp
                 , irAuthor :: User
                 , irDescription :: Text
                 , irState :: Text
@@ -298,7 +298,7 @@ createIssue tok sudo prj ci =
 data EditIssue
     = EditIssue { eiTitle       :: Maybe Text
                 , eiDescription :: Maybe Text
-                , eiMilestone :: Maybe (Maybe Milestone)
+                , eiMilestone :: Maybe (Maybe MilestoneResp)
                 , eiLabels      :: Maybe Labels
                 , eiStatus      :: Maybe StatusEvent
                 , eiUpdateTime  :: Maybe UTCTime
@@ -317,7 +317,7 @@ instance ToJSON EditIssue where
         $ catMaybes
         [ "title" .=? eiTitle
         , "description" .=? eiDescription
-        , "milestone_id" .=? fmap (fmap (\(Milestone _ mid) -> mid)) (eiMilestone)
+        , "milestone_id" .=? fmap (fmap mrId) (eiMilestone)
         , "labels" .=? eiLabels
         , "state_event" .=? eiStatus
         , "updated_at" .=? eiUpdateTime

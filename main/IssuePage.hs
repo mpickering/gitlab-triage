@@ -19,9 +19,9 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, set)
+import Control.Lens (view, set, ALens, cloneLens)
 import Control.Monad (void)
-import Data.Maybe (fromMaybe, catMaybes, listToMaybe)
+import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -108,9 +108,9 @@ changed :: (a -> Widget n) -> a -> Maybe a -> Widget n
 changed f v Nothing = f v
 changed f _ (Just c) = withAttr "changed" $ f c
 
-drawMilestone :: Maybe Milestone -> Widget n
+drawMilestone :: Maybe MilestoneResp -> Widget n
 drawMilestone Nothing = txt " "
-drawMilestone (Just (Milestone t _)) = txt t
+drawMilestone (Just mr) = txt (view (field @"mrTitle") mr)
 
 drawWeight :: Maybe Int -> Widget n
 drawWeight Nothing = txt " "
@@ -365,13 +365,17 @@ ownerAutocomplete us ini =
     (Dialog (OwnerName True))
 
 
+{-
 startMilestoneInput :: IssuePage
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
 startMilestoneInput tl l =
   let milestone = view (typed @IssueResp . field @"irMilestone") tl
-      milestone_t = (\(Milestone n _) -> n) <$> milestone
+      milestone_t = view (field @"mrTitle")  <$> milestone
       milestones = view (field @"milestones") l
+      place = typed @IssueResp . field @"irMilestone"
+      dispatcher = IssuePageDialog (checkMilestoneInput milestones) place
+                                   (milestoneAutocomplete milestones milestone_t)
   in M.continue (set typed
                  (MilestoneDialog (milestoneAutocomplete milestones milestone_t))
                  l)
@@ -382,10 +386,69 @@ startOwnerInput :: IssuePage
 startOwnerInput tl l =
   let owner = view (typed @IssueResp . field @"irAssignees") tl
       owner_t = listToMaybe (view (field @"userUsername") <$> owner)
-      users = view (field @"users") l
   in M.continue (set typed
                  (OwnerDialog (ownerAutocomplete users owner_t))
                  l)
+                 -}
+
+startMilestoneInput :: IssuePage
+                    -> OperationalState
+                    -> EventM Name (Next OperationalState)
+startMilestoneInput ip os =
+  let milestones = view (field @"milestones") os
+      draw Nothing = " "
+      draw (Just m) = view (field @"mrTitle") m
+
+      place :: ALens IssuePage IssuePage (Maybe MilestoneResp)
+                                         (Maybe MilestoneResp)
+      place = typed @IssueResp . field @"irMilestone"
+  in startDialog (checkMilestoneInput milestones)
+                 draw
+                 (typed @Updates . typed @EditIssue . field @"eiMilestone")
+                 place
+                 (map Just milestones)
+                 ip os
+
+
+startOwnerInput :: IssuePage
+                    -> OperationalState
+                    -> EventM Name (Next OperationalState)
+startOwnerInput ip os =
+  let users = view (field @"users") os
+      draw  = T.intercalate ", " . map (view (field @"userUsername"))
+  in startDialog (checkUserInput users)
+                 draw
+                 (typed @Updates . typed @EditIssue . field @"eiAssignees")
+                 (typed @IssueResp . field @"irAssignees")
+                 (map (:[]) users)
+                 ip os
+
+
+
+
+startDialog :: (T.Text -> Maybe a)
+            -> (a -> T.Text)
+            -> (ALens IssuePage IssuePage (Maybe a) (Maybe a))
+            -> (ALens IssuePage IssuePage a a)
+            -> [a]
+            -> IssuePage
+            -> OperationalState
+            -> EventM Name (Next OperationalState)
+startDialog check draw upd_place cur_place ini ip os =
+  let ini_state = view (cloneLens cur_place) ip
+      state_t = draw ini_state
+
+      ac =
+        mkAutocomplete
+          ini
+          (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s)
+          draw
+          (Just state_t)
+          (Dialog (MilestoneName False))
+          (Dialog (MilestoneName True))
+
+      dispatcher = IssuePageDialog check upd_place ac
+  in M.continue (set typed dispatcher os)
 
 
 
