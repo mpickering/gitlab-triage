@@ -15,6 +15,6 @@ TODO
 
 * Cleanup the footer input like dialog input - DONE
 * Cleanup footer event handling so it can be moved into seperate modules
-* Error handling for failed http requests
+* Error handling for failed http requests - DONE
 * Footer to ticket list page
 * Caching for HTTP requests (medium priority)

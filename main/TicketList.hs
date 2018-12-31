@@ -29,8 +29,6 @@ import qualified Brick.Widgets.List as L
 import qualified Brick.Widgets.Center as C
 import Brick.Types ( Widget )
 import Data.Generics.Product
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Except
 
 import Text.Megaparsec
 import Control.Applicative.Combinators ()
@@ -179,10 +177,9 @@ ticketListEnter tl o = do
   case cursorTicket of
     Nothing -> M.continue o
     Just (_, t) -> do
-      res <- liftIO (runExceptT (loadByIssueResp t (view (typed @AppConfig) o)) )
-      case res of
-        Left err -> M.continue (set typed (FooterMessage (T.pack (show err))) o)
-        Right v -> M.continue . issueView o $ v
+      displayError (loadByIssueResp t (view (typed @AppConfig) o))
+                   (\v -> M.continue . issueView o $ v)
+                   o
 
 ---
 --
