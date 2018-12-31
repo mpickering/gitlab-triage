@@ -13,7 +13,7 @@ Features
 
 TODO
 
-* Cleanup the footer input like dialog input
+* Cleanup the footer input like dialog input - DONE
 * Cleanup footer event handling so it can be moved into seperate modules
 * Error handling for failed http requests
 * Footer to ticket list page

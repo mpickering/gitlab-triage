@@ -145,6 +145,7 @@ globalHandler k l re = do
  case view typed l of
     NoDialog ->
       case view typed l of
+        FooterMessage _ -> infoFooterHandler k l re
         FooterInfo -> infoFooterHandler k l re
         FooterInput m tc -> inputFooterHandler m tc k l re
     dc -> dialogHandler dc l re
@@ -240,8 +241,9 @@ dispatchFooterInput FGoto tc l =
   case checkGotoInput (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
     Just iid -> do
-      (liftIO $ loadByIid iid (view typed l)) >>=
-        M.continue . resetFooter . issueView l
+      displayError (loadByIid iid (view typed l))
+                   (M.continue . resetFooter . issueView l)
+                   l
 dispatchFooterInput (FGen _ check place)  tc l =
   case check (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)

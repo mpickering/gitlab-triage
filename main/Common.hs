@@ -25,6 +25,9 @@ import GitLab.Common
 import GitLab.Users
 import GitLab.Tickets
 
+import System.IO
+import Control.Monad.Trans.Except
+
 
 {- Handler definitions -}
 
@@ -62,13 +65,22 @@ halt = lift . M.halt
 continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
 continue = lift . M.continue
 
-runQuery :: AppConfig -> (AccessToken -> ProjectId -> ClientM a) -> IO a
+runQuery :: AppConfig -> (AccessToken -> ProjectId -> ClientM a)
+         -> ExceptT ServantError IO a
 runQuery l q = do
   let tok   = view (field @"userConfig" . field @"token") l
       reqEnv'  = view (field @"reqEnv") l
       project' = view (field @"userConfig" . field @"project") l
-  res <- runClientM (q tok project') reqEnv'
-  return (either (error . show) id res)
+  ExceptT $ runClientM (q tok project') reqEnv'
+
+displayError :: ExceptT ServantError IO a
+             -> (a -> T.EventM n (T.Next OperationalState))
+             -> OperationalState ->  T.EventM n (T.Next OperationalState)
+displayError act k o = do
+  res <- liftIO (runExceptT act)
+  case res of
+    Left err -> M.continue (set typed (FooterMessage (T.pack (show err))) o)
+    Right v -> k v
 
 issueView :: OperationalState -> IssuePage -> OperationalState
 issueView l n = set (field @"mode") (IssueView n) l
@@ -76,12 +88,12 @@ issueView l n = set (field @"mode") (IssueView n) l
 {- Running external queries -}
 
 
-loadByIid :: IssueIid -> AppConfig -> IO IssuePage
+loadByIid :: IssueIid -> AppConfig -> ExceptT ServantError IO IssuePage
 loadByIid iid ac = do
   r <- runQuery ac (getOneIssue iid)
   loadByIssueResp r ac
 
-loadByIssueResp :: IssueResp -> AppConfig -> IO IssuePage
+loadByIssueResp :: IssueResp -> AppConfig -> ExceptT ServantError IO IssuePage
 loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
@@ -102,18 +114,30 @@ initialise c = do
               (gitlabBaseUrl (view (field @"url" . to T.unpack) c))
       conf = (AppConfig c env)
 
-  cur_labels <- runQuery conf getLabels
-  cur_milestones <- runQuery conf getMilestones
-  cur_users <- runQuery conf (\tok _ -> getUsers tok)
-  les <- TicketListView <$> loadTicketList defaultSearchParams conf
+  cur_labels <- defaultEither $ runQuery conf getLabels
+  cur_milestones <- defaultEither $ runQuery conf getMilestones
+  cur_users <- defaultEither $ runQuery conf (\tok _ -> getUsers tok)
+  cur_tickets <- loadTicketList defaultSearchParams conf
+  let les = TicketListView cur_tickets
   let mm = Operational (OperationalState les FooterInfo NoDialog
                                          cur_labels cur_milestones cur_users conf)
   return $ AppState mm
 
+-- Used when we can't recover
+unsafeEither :: IO (Either ServantError a) -> IO a
+unsafeEither act = either (error . show) id <$> act
+
+defaultEither :: ExceptT ServantError IO [a] -> IO [a]
+defaultEither act = do
+  v <- runExceptT act
+  case v of
+    Left err -> hPutStr stderr (show err) >> return []
+    Right res -> return res
+
 loadTicketList :: GetIssuesParams -> AppConfig -> IO TicketList
 loadTicketList sp conf = do
-  es <- runQuery conf (getIssues sp)
-  return $ TicketList (L.list IssueList (Vec.fromList es) 1) sp
+  es <- defaultEither $ runQuery conf (getIssues sp)
+  return $ (TicketList (L.list IssueList (Vec.fromList es) 1) sp)
 
 ---
 

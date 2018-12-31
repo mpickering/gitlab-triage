@@ -59,6 +59,7 @@ data Updates = Updates { comment :: Maybe CreateIssueNote
 
 
 data FooterMode = FooterInfo  -- Display generic info
+                | FooterMessage Text
                 | FooterInput FooterInputMode TextCursor  -- Accept input
                 deriving Generic
 

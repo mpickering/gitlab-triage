@@ -156,6 +156,7 @@ drawUpdates (Updates c EditIssue{..}) =
 footer :: FooterMode -> Widget Name
 footer m = vLimit 1 $
  case m of
+   FooterMessage t -> txt t
    FooterInfo ->
     txt "r - reload; g - goto; c - comment; d - description; F10 - commit changes"
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
@@ -210,8 +211,6 @@ internalIssuePageHandler l (T.VtyEvent e) =
       newCommentHandler l
     V.EvKey (V.KChar 'd') [] ->
       editDescriptionHandler l
-    V.EvKey (V.KFun 10) [] ->
-      applyChanges l
     ev -> continue
             =<< lift (handleEventLensed l (field @"issueNotes") L.handleListEvent ev)
 internalIssuePageHandler l _ = continue l
@@ -262,42 +261,10 @@ issuePageHandler ip l e =
     (T.VtyEvent (V.EvKey (V.KChar 'm') []))  -> startMilestoneInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'o') []))  -> startOwnerInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'w') []))  -> startWeightInput ip l
+    (T.VtyEvent (V.EvKey (V.KFun 10) [])) -> applyChanges ip l
     _ ->
       liftHandler typed ip IssueView
         (demote (view typed l) internalIssuePageHandler) l e
-
-{-
-                       FGoto -> "g: "
-                       FTitle -> "title: "
-                       FLabels -> "labels: "
-                       FMilestone -> "milestone: "
-                       FWeight -> "weight: "
-
-
-dispatchFooterInput FTitle tc l =
-  case checkTitleInput (rebuildTextCursor tc) of
-    Nothing -> M.continue (resetFooter l)
-    Just t -> do
-      M.continue $ set (issueEdit . field @"eiTitle") (Just t) (resetFooter l)
-dispatchFooterInput FLabels tc l =
-  case checkLabelInput (rebuildTextCursor tc) of
-    Nothing -> M.continue (resetFooter l)
-    Just ls -> do
-      M.continue $ set (issueEdit . field @"eiLabels") (Just ls) (resetFooter l)
-dispatchFooterInput FMilestone tc l =
-  let ms = view (field @"milestones") l
-  in
-  case checkMilestoneInput (rebuildTextCursor tc) ms of
-    Nothing  -> M.continue (resetFooter l)
-    Just mid -> do
-      traceShowM mid
-      M.continue $ set (issueEdit . field @"eiMilestone") (Just mid) (resetFooter l)
-dispatchFooterInput FWeight tc l =
-  case checkWeightInput (rebuildTextCursor tc) of
-    Nothing -> M.continue (resetFooter l)
-    Just ls -> do
-      M.continue $ set (issueEdit . field @"eiWeight") (Just ls) (resetFooter l)
-                       -}
 
 startTitleInput :: IssuePage
                 -> OperationalState
@@ -423,20 +390,19 @@ startDialog check draw upd_place cur_place ini ip os =
   in M.continue (set typed dispatcher os)
 
 
-applyChanges :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
-applyChanges ip = do
+applyChanges :: IssuePage -> OperationalState -> EventM Name (Next OperationalState)
+applyChanges ip o = do
   let iid = view (typed @IssueResp  . field @"irIid") ip
       (Updates c ei)  = view (typed @Updates) ip
-  ac <- ask
-
-  unless (nullEditIssue ei)
-         (void $ liftIO $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei))
-  liftIO $ forM_ c (\note ->
-    runQuery ac (\tok p -> createIssueNote tok Nothing p iid note))
-  -- TODO: Make this more precise
-  lift invalidateCache
-  -- Could save one request here if we use the response from editIssue
-  liftIO (loadByIid iid ac) >>= continue
+      ac = view (typed @AppConfig) o
+  displayError (do
+          unless (nullEditIssue ei)
+                 (void $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei))
+          forM_ c (\note ->
+            runQuery ac (\tok p -> createIssueNote tok Nothing p iid note))
+        -- Could save one request here if we use the response from editIssue
+          loadByIid iid ac)
+          (\v -> invalidateCache >> M.continue (set typed (IssueView v) o)) o
 
 demote :: AppConfig -> HandlerR a -> Handler a
 demote ac h a e = runReaderT (h a e) ac
