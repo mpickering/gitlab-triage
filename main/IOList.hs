@@ -8,35 +8,43 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
--- | This module provides a scrollable list type and functions for
--- manipulating and rendering it.
+-- | This module provides a scrollable list type like the one provided by
+-- the main library but with support for lazily loading list items. Even
+-- though the items are lazily loaded, we must still statically know the
+-- size of the list so that the rendering works correctly.
 --
--- Note that lenses are provided for direct manipulation purposes, but
--- lenses are *not* safe and should be used with care. (For example,
--- 'listElementsL' permits direct manipulation of the list container
--- without performing bounds checking on the selected index.) If you
--- need a safe API, consider one of the various functions for list
--- manipulation. For example, instead of 'listElementsL', consider
--- 'listReplace'.
-module IOList
+-- This is meant to be used where the data you want to display in a list is
+-- provided by a paginated API.
+module IOList(IOListWidget(..), handleListEvent
+              , renderList
+              , renderListWithIndex, list,
 
-where
+              -- Constructing IOLists
+              IOList(..),
+              nil, cons, concatILPure, fromList,
+
+              -- List accessors
+              listSelectedElement,
+              listReplace,
+              listRemove,
+              listInsert,
+
+
+              -- Helpers
+              lengthIL, nullIL, concatIL
+              ) where
 
 import Prelude hiding (reverse, splitAt)
 
-import Data.Foldable (find, toList)
 import Control.Monad.Trans.State (evalState, get, put)
 
 import Control.Monad
 
 import Control.Lens hiding (List, imap, uncons, cons)
 import Data.Functor (($>))
-import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Maybe (fromMaybe)
-import Data.Semigroup (Semigroup, (<>), sconcat)
-import qualified Data.Sequence as Seq
-import Graphics.Vty (Event(..), Key(..), Modifier(..))
-import qualified Data.Vector as V
+import Data.Semigroup ((<>))
+import Graphics.Vty (Event(..), Key(..))
 import GHC.Generics (Generic)
 
 
@@ -67,12 +75,11 @@ instance Functor IOList where
   fmap f (IOList n l) = IOList n (fmap f l)
 
 instance Functor IOListL where
-  fmap f ILNil = ILNil
+  fmap _ ILNil = ILNil
   fmap f (ILCons x l) = ILCons (f x) (fmap f l)
   fmap f (ILLoad act) = ILLoad (fmap (fmap f) act)
 
-
-
+-- A list with delayed embedded IO actions but a statically known length.
 data IOList e = IOList Int (IOListL e)
 
 nil :: IOList e
@@ -105,9 +112,6 @@ splitAt n l = do
       return (v : ts, ds)
 
 
-ioListLength :: IOList e -> Int
-ioListLength (IOList n _) = n
-
 uncons :: IOList e -> IO (Maybe (e, IOList e))
 uncons (IOList _ k) = unconsL k
 
@@ -123,57 +127,53 @@ fromList [] = IOList 0 ILNil
 fromList (e:es) = cons e (fromList es)
 
 
--- Caution: will run all IO actions
---toList :: IOList e -> IO [e]
---toList
-
 instance Named (IOListWidget n e) n where
     getName = listName
-
-suffixLenses ''IOListWidget
 
 force :: Int -> IOList e -> IO (IOList e)
 force k l | k <= 0 = return l
 force k (IOList _ l) = force' k l
 
 force' :: Int -> IOListL e -> IO (IOList e)
-force' k ILNil = return nil
+force' _ ILNil = return nil
 force' k (ILCons v l) = cons v <$> (force (k - 1) l)
 force' k (ILLoad act) = do
   res <- act
   force k res
 
+concatILPure :: [e] -> IOList e -> IOList e
+concatILPure [] l = l
+concatILPure (e:es) l = cons e (concatILPure es l)
+
+concatIL :: IOList e -> IOList e -> IO (IOList e)
+concatIL (IOList _ l1) l2 = concatIL' l1 l2
+
+concatIL' :: IOListL e -> IOList e -> IO (IOList e)
+concatIL' ILNil l = return l
+concatIL' (ILCons e l1) l2 = cons e <$> (concatIL l1 l2)
+concatIL' (ILLoad act) l2 = do
+  l1 <- act
+  concatIL l1 l2
+
+lengthIL :: IOList e -> Int
+lengthIL (IOList n _) = n
+
+nullIL :: IOList e -> Bool
+nullIL = (== 0) . lengthIL
+
+suffixLenses ''IOListWidget
+
+-- Verify that the reported length is the same as the actual length
 verify :: IOList e -> IO Bool
 verify (IOList n e) = verify' n e
 
 verify' :: Int -> IOListL e -> IO Bool
 verify' n ILNil = return $ if n == 0 then True else False
-verify' n (ILCons v (IOList n' l)) =
+verify' n (ILCons _ (IOList n' l)) =
   if n == n' + 1 then verify' n' l else return False
 verify' n (ILLoad act) = do
   (IOList n' l) <- act
   if n == n' then verify' n' l else return False
-
-
--- | Ordered container types that can be split at a given index. An
--- instance of this class is required for a container type to be usable
--- with 'IOListWidget'.
-    --slice :: Int {- ^ start index -} -> Int {- ^ length -} -> t a -> t a
-    --slice i n = fst . splitAt n . snd . splitAt i
-
--- | Ordered container types where the order of elements can be
--- reversed. Only required if you want to use 'listReverse'.
-class Reversible t where
-    {-# MINIMAL reverse #-}
-    reverse :: t a -> t a
-
--- | /O(n)/ 'reverse'
-instance Reversible V.Vector where
-  reverse = V.reverse
-
--- | /O(n)/ 'reverse'
-instance Reversible Seq.Seq where
-  reverse = Seq.reverse
 
 -- | Handle events for list cursor movement.  Events handled are:
 --
@@ -344,7 +344,7 @@ drawListElements foc l drawElem =
 
         render $ viewport (l^.listNameL) Vertical $
                  translateBy (Location (0, off)) $
-                 vBox $ toList drawnElements
+                 vBox $ drawnElements
 
 -- | Insert an item into a list at the specified position.
 --
@@ -406,19 +406,6 @@ listRemove pos l | nullIL (l^.listElementsL) = return l
     return $ l & listSelectedL .~ (if nullIL es' then Nothing else Just newSel)
                & listElementsL .~ es'
 
-concatILPure :: [e] -> IOList e -> IOList e
-concatILPure [] l = l
-concatILPure (e:es) l = cons e (concatILPure es l)
-
-concatIL :: IOList e -> IOList e -> IO (IOList e)
-concatIL (IOList _ l1) l2 = concatIL' l1 l2
-
-concatIL' :: IOListL e -> IOList e -> IO (IOList e)
-concatIL' ILNil l = return l
-concatIL' (ILCons e l1) l2 = cons e <$> (concatIL l1 l2)
-concatIL' (ILLoad act) l2 = do
-  l1 <- act
-  concatIL l1 l2
 
 -- | Replace the contents of a list with a new set of elements and
 -- update the new selected index. If the list is empty, empty selection
@@ -522,11 +509,6 @@ listMoveTo pos l = do
                                     else Nothing )
                & listElementsL .~ (f `concatILPure` t')
 
-lengthIL :: IOList e -> Int
-lengthIL (IOList n _) = n
-
-nullIL :: IOList e -> Bool
-nullIL = (== 0) . lengthIL
 
 -- | Return a list's selected element, if any.
 --

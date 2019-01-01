@@ -17,6 +17,8 @@ import Autocomplete
 import Control.Lens (ALens)
 import Data.Text (Text)
 
+import qualified IOList
+
 
 
 data AppState = AppState { majorMode :: MajorMode

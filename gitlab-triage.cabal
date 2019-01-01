@@ -27,7 +27,7 @@ executable gitlab-triage
   main-is:             Main.hs
   other-modules:       Config, SetupForm, Namespace, Model, Autocomplete,
                        Common, TicketList, Parsers, IssuePage, TextCursor,
-                       ExternalEditor, SetupMode
+                       ExternalEditor, SetupMode, IOList
 
   -- other-extensions:
   ghc-options: -threaded -Wall -O2
