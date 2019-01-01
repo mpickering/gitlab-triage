@@ -20,7 +20,7 @@ module IOList(IOListWidget(..), handleListEvent
               , renderListWithIndex, list,
 
               -- Constructing IOLists
-              IOList(..),
+              IOList(..), IOListL(..),
               nil, cons, concatILPure, fromList,
 
               -- List accessors
@@ -31,7 +31,11 @@ module IOList(IOListWidget(..), handleListEvent
 
 
               -- Helpers
-              lengthIL, nullIL, concatIL
+              lengthIL, nullIL, concatIL, toListPure,
+
+              --
+              listElementsL,
+              verify
               ) where
 
 import Prelude hiding (reverse, splitAt)
@@ -164,16 +168,16 @@ nullIL = (== 0) . lengthIL
 suffixLenses ''IOListWidget
 
 -- Verify that the reported length is the same as the actual length
-verify :: IOList e -> IO Bool
+verify :: IOList e -> IO (Maybe String)
 verify (IOList n e) = verify' n e
 
-verify' :: Int -> IOListL e -> IO Bool
-verify' n ILNil = return $ if n == 0 then True else False
+verify' :: Int -> IOListL e -> IO (Maybe String)
+verify' n ILNil = return $ if n == 0 then Nothing else (Just "Nil not length 0")
 verify' n (ILCons _ (IOList n' l)) =
-  if n == n' + 1 then verify' n' l else return False
+  if n == n' + 1 then verify' n' l else return (Just (show ("cons", n, n')))
 verify' n (ILLoad act) = do
   (IOList n' l) <- act
-  if n == n' then verify' n' l else return False
+  if n == n' then verify' n' l else return (Just (show ("load", n, n')))
 
 -- | Handle events for list cursor movement.  Events handled are:
 --
@@ -497,8 +501,12 @@ listMoveTo :: Int
 listMoveTo pos l = do
     let len = lengthIL (l ^. listElementsL)
         i = if pos < 0 then len - pos else pos
+    {-
     v <- verify (l ^. listElementsL)
-    unless v (error "verification error")
+    case v of
+      Just err -> error err
+      Nothing -> return ()
+      -}
     (f, t) <- splitAt i (l ^. listElementsL)  -- split at i
     let newSel = clamp 0 (if nullIL t then lengthIL (l ^. listElementsL) - 1
                                       else i) i

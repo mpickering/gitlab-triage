@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Common where
 
 import Network.HTTP.Client.TLS as TLS
@@ -14,6 +15,7 @@ import qualified Brick.Widgets.List as L
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import Brick
+import qualified IOList
 
 import Servant.Client
 
@@ -73,6 +75,38 @@ runQuery l q = do
       project' = view (field @"userConfig" . field @"project") l
   ExceptT $ runClientM (q tok project') reqEnv'
 
+runQueryPaginate :: forall a . AppConfig
+                 -> (Maybe Int -> AccessToken -> ProjectId
+                                              -> ClientM (GetIssueHeaders, [a]))
+                 -> ExceptT ServantError IO (IOList.IOList a)
+runQueryPaginate ac q = do
+  (hs, inis) <- ExceptT $ runClientM (q Nothing tok project') reqEnv'
+  liftIO (print hs)
+  let io_list =
+        case next_page hs of
+          Nothing -> IOList.nil
+          Just p  -> loop (total hs - per_page hs) p 10
+  return (inis `IOList.concatILPure` io_list)
+  where
+    tok   = view (field @"userConfig" . field @"token") ac
+    reqEnv'  = view (field @"reqEnv") ac
+    project' = view (field @"userConfig" . field @"project") ac
+
+    loop :: Int -> Int -> Int -> IOList.IOList a
+    loop rem_n cur tot | cur > tot = IOList.nil
+                       | otherwise = IOList.IOList rem_n $ IOList.ILLoad $ do
+                    res <- runClientM (q (Just cur) tok project') reqEnv'
+                    case res of
+                      Left _ -> return (IOList.nil)
+                      Right (gih, as) ->
+                        return
+                          (as `IOList.concatILPure`
+                            case next_page gih of
+                              Nothing -> IOList.nil
+                              Just p  -> loop (rem_n - per_page gih) p tot)
+
+
+
 displayError :: ExceptT ServantError IO a
              -> (a -> T.EventM n (T.Next OperationalState))
              -> OperationalState ->  T.EventM n (T.Next OperationalState)
@@ -114,9 +148,9 @@ initialise c = do
               (gitlabBaseUrl (view (field @"url" . to T.unpack) c))
       conf = (AppConfig c env)
 
-  cur_labels <- defaultEither $ runQuery conf getLabels
-  cur_milestones <- defaultEither $ runQuery conf getMilestones
-  cur_users <- defaultEither $ runQuery conf (\tok _ -> getUsers tok)
+  cur_labels <- defaultEither [] $ runQuery conf getLabels
+  cur_milestones <- defaultEither [] $ runQuery conf getMilestones
+  cur_users <- defaultEither [] $ runQuery conf (\tok _ -> getUsers tok)
   cur_tickets <- loadTicketList defaultSearchParams conf
   let les = TicketListView cur_tickets
   let mm = Operational (OperationalState les FooterInfo NoDialog
@@ -127,17 +161,18 @@ initialise c = do
 unsafeEither :: IO (Either ServantError a) -> IO a
 unsafeEither act = either (error . show) id <$> act
 
-defaultEither :: ExceptT ServantError IO [a] -> IO [a]
-defaultEither act = do
+defaultEither :: a -> ExceptT ServantError IO a -> IO a
+defaultEither d act = do
   v <- runExceptT act
   case v of
-    Left err -> hPutStr stderr (show err) >> return []
+    Left err -> hPutStr stderr (show err) >> return d
     Right res -> return res
 
 loadTicketList :: GetIssuesParams -> AppConfig -> IO TicketList
 loadTicketList sp conf = do
-  es <- defaultEither $ runQuery conf (getIssues sp)
-  return $ (TicketList (L.list IssueList (Vec.fromList es) 1) sp)
+  es <- defaultEither IOList.nil $ runQueryPaginate conf (getIssues sp)
+  --let es = IOList.nil
+  return $ (TicketList (IOList.list IssueList es 1 50) sp)
 
 ---
 

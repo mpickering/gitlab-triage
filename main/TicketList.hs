@@ -25,10 +25,13 @@ import qualified Graphics.Vty as V
 import qualified Brick.Main as M
 import qualified Brick.Types as T
 import qualified Brick.Widgets.Border as B
-import qualified Brick.Widgets.List as L
+--import qualified Brick.Widgets.List as L
+import qualified IOList as L
 import qualified Brick.Widgets.Center as C
 import Brick.Types ( Widget )
 import Data.Generics.Product
+
+import Control.Monad.IO.Class (liftIO)
 
 import Text.Megaparsec
 import Control.Applicative.Combinators ()
@@ -173,7 +176,7 @@ ticketListEnter :: TicketList
                 -> OperationalState
                 -> T.EventM Name (T.Next OperationalState)
 ticketListEnter tl o = do
-  let cursorTicket = view (field @"issues" . to L.listSelectedElement) tl
+  cursorTicket <- liftIO $ view (field @"issues" . to L.listSelectedElement) tl
   case cursorTicket of
     Nothing -> M.continue o
     Just (_, t) -> do
@@ -197,6 +200,8 @@ drawTicketList _ tl = [ui]
 
     box = B.border . vBox $ [
             L.renderList drawTicketRow True issues
+            , str $ "Loaded Elems:"
+                ++ (show (length (L.toListPure (view L.listElementsL issues))))
             , B.hBorder
             , searchBox
             , B.hBorder

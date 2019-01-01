@@ -26,6 +26,10 @@ import GitLab.Common
 import Control.Monad.IO.Class (liftIO)
 import GHC.Generics
 import GitLab.Users
+import qualified Data.ByteString.Char8 as B
+import Text.Read
+
+import Debug.Trace
 
 ----------------------------------------------------------------------
 -- getIssue
@@ -227,12 +231,29 @@ type GetIssueAPI =
     :> QueryParam "author_id" UserId
     :> QueryParam "assignee_id" AssigneeParam
     :> QueryParam "weight" Int
-    :> Get '[JSON] [IssueResp]
+    :> QueryParam "page" Int
+    :> QueryParam "per_page" Int
+    :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int
+                              , Header "X-Total" Int
+                              , Header "X-Page" Int
+                              , Header "X-Next-Page" Int
+                              , Header "X-Per-Page" Int] [IssueResp]))
+
+data GetIssueHeaders = GetIssueHeaders {
+                        total_pages :: Int
+                        , total :: Int
+                        , page :: Int
+                        , next_page :: (Maybe Int)
+                        , per_page :: Int } deriving Show
 
 
-getIssues :: GetIssuesParams -> AccessToken -> ProjectId -> ClientM [IssueResp]
-getIssues GetIssuesParams{..} tok prj =
-    client (Proxy :: Proxy GetIssueAPI) (Just tok) prj
+getIssues :: GetIssuesParams
+          -> Maybe Int
+          -> AccessToken
+          -> ProjectId
+          -> ClientM (GetIssueHeaders, [IssueResp])
+getIssues GetIssuesParams{..} mb_page tok prj = do
+  res <- client (Proxy :: Proxy GetIssueAPI) (Just tok) prj
       gipScope
       gipState
       gipLabels
@@ -240,6 +261,32 @@ getIssues GetIssuesParams{..} tok prj =
       (userId <$> gipAuthor)
       gipAssignee
       gipWeight
+      mb_page
+      (Just 100)
+  let hs = getHeaders res
+
+      read_header_m s =
+        let p = fromMaybe "1" $ lookup s hs
+        in readMaybe (B.unpack p) :: Maybe Int
+
+      read_header s =
+        case read_header_m s of
+              Just r -> r
+              Nothing -> error (show s)
+
+
+
+
+      gih = GetIssueHeaders (read_header "X-Total-Pages")
+                            (read_header "X-Total")
+                            (read_header "X-Page")
+                            (read_header_m "X-Next-Page")
+                            (read_header "X-Per-Page")
+  return (gih, getResponse res)
+
+
+
+
 
 type GetOneIssueAPI =
     GitLabRoot :> "projects"

@@ -141,7 +141,7 @@ getUsers tok = do
   h <- mkReq 1
   let total = fromMaybe "1" $ lookup "X-Total-Pages" (getHeaders h )
       total_n = read (B.unpack total) :: Int
-  us <- loop 2 total_n
+  us <- loop 2 2
   return $ getResponse h ++ us
   where
     mkReq k = client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100) (Just k)

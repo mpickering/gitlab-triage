@@ -45,7 +45,7 @@ data Mode = TicketListView TicketList
           deriving Generic
 
 data TicketList = TicketList {
-                    issues :: L.List Name IssueResp
+                    issues :: IOList.IOListWidget Name IssueResp
                     , params :: GetIssuesParams
                     } deriving Generic
 
