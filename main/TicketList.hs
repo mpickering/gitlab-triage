@@ -233,15 +233,18 @@ drawTicketList _ tl = [ui]
 
     searchBox = drawSearchBox params
 
+    footer = txt "g - goto ticket; ESC - quit"
+
     total = str $ show $ L.lengthIL $ view L.listElementsL issues
 
     box = B.borderWithLabel total . vBox $ [
             L.renderList drawTicketRow True issues
-            , str $ "Loaded Elems:"
-                ++ (show (length (L.toListPure (view L.listElementsL issues))))
+            --, str $ "Loaded Elems:"
+            --    ++ (show (length (L.toListPure (view L.listElementsL issues))))
             , B.hBorder
             , searchBox
             , B.hBorder
+            , footer
             ]
 
     ui = C.vCenter $ vBox [ C.hCenter box
