@@ -7,6 +7,7 @@ module Common where
 
 import qualified Servant.Client.Internal.HttpClient as I
 import qualified Network.HTTP.Client                as HTTP
+import Servant.Client.Core.Internal.Request
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
@@ -31,6 +32,7 @@ import Model
 import GitLab.Common
 import GitLab.Users
 import GitLab.Tickets
+import Cache
 
 import System.IO
 import Control.Monad.Trans.Except
@@ -39,7 +41,6 @@ import Control.Monad.Error.Class
 
 import Data.Hashable
 
-import Cache
 
 toClientM :: ClientM a -> H.ClientM a
 toClientM c = iterM alg c
@@ -62,10 +63,14 @@ runClientWithCache mcache c e = iterM alg (fmap Right c)
   where
     alg :: ClientF (IO (Either ServantError a)) -> IO (Either ServantError a)
     alg (RunRequest req k) = do
+      -- We convert it because this version has a Show instance..
       let req' = I.requestToClientRequest (H.baseUrl e) req
-      res <- lookupOrInsertCache req'
-                                 (I.runClientM (I.performRequest req) e)
-                                 mcache
+          act = I.runClientM (I.performRequest req) e
+      -- Don't cache POST or PUT requests for instance
+      res <-
+        if requestMethod req == "GET"
+          then lookupOrInsertCache req' act mcache
+          else act
       case res of
         Left err -> return (Left err)
         Right v  -> k v
