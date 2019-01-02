@@ -99,7 +99,7 @@ drawIssuePage fm l =
 
     updateLog = drawUpdates (view (field @"updates") l)
 
-    desc = (changed txtWrap irDescription eiDescription)
+    desc = vLimit 20 (changed txtWrap irDescription eiDescription)
 
     notesSect =
       L.renderList drawNote True notes
