@@ -251,6 +251,7 @@ issuePageHandler ip l e =
   case e of
     (T.VtyEvent (V.EvKey V.KEsc [])) -> do
       tl <- liftIO $ loadTicketList defaultSearchParams (view (typed @AppConfig) l)
+      invalidateCache
       M.continue (set typed (TicketListView tl) l)
     (T.VtyEvent (V.EvKey (V.KChar 't') []))  -> startTitleInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'l') []))  -> startLabelInput ip l
