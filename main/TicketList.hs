@@ -90,11 +90,11 @@ startLabelDialog tl l =
     ls = WithLabels . mkLabel . view (field @"lrName")
           <$> view (field @"labels") l
 
-    checkLabel (T.toLower -> t) =
-      case t of
+    checkLabel t =
+      case (T.toLower t) of
         "none" -> Just NoLabels
         "any"  -> Just AnyLabel
-        ts     -> WithLabels <$> checkLabelInput ts
+        _     -> WithLabels <$> checkLabelInput t
 
 startMilestoneDialog tl l =
   startDialog txtMilestoneParam checkMilestone (field @"params" . field @"gipMilestone")
