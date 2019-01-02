@@ -21,9 +21,8 @@ import Data.Proxy
 import Data.String
 import Data.Time.Clock
 import Servant.API
-import Servant.Client
+import Servant.Client.Free
 import GitLab.Common
-import Control.Monad.IO.Class (liftIO)
 import GHC.Generics
 import GitLab.Users
 import qualified Data.ByteString.Char8 as B
@@ -561,7 +560,6 @@ createMilestone :: AccessToken -> Maybe UserId
                 -> ProjectId -> CreateMilestone
                 -> ClientM MilestoneId
 createMilestone tok sudo prj cm = do
-    liftIO $ putStrLn $ "Create milestone: " ++ show cm
     CreateMilestoneResp mid <- client (Proxy :: Proxy CreateMilestoneAPI) (Just tok) prj cm sudo
     return mid
 
@@ -625,7 +623,6 @@ createIssueLink :: AccessToken -> Maybe UserId
                 -> CreateIssueLink
                 -> ClientM IssueLinkId
 createIssueLink tok sudo prj iid cm = do
-    liftIO $ putStrLn $ "Create issueLink: " ++ show cm
     CreateIssueLinkResp mid <- client (Proxy :: Proxy CreateIssueLinkAPI) (Just tok) prj iid cm sudo
     return mid
 
@@ -685,7 +682,6 @@ subscribeIssue :: AccessToken
                 -> IssueIid
                 -> ClientM ()
 subscribeIssue tok sudo prj iid = do
-    liftIO $ putStrLn $ "Subscribe to issue: " ++ show iid
     SubscribeIssueResp <- client (Proxy :: Proxy SubscribeIssueAPI) (Just tok) prj iid SubscribeIssue sudo
     return ()
 

@@ -17,7 +17,7 @@ import Data.Aeson
 import System.Process
 import System.Directory
 import Servant.Client
-import GitLab.Common
+import GitLab.Common hiding (ClientM)
 
 ----------------------------------------------------------------------
 -- uploadFile

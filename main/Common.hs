@@ -4,6 +4,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Common where
 
+import qualified Servant.Client.Internal.HttpClient as I
+--import qualified Network.HTTP.Client                as HTTP
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
@@ -18,7 +20,8 @@ import qualified Data.Vector as Vec
 import Brick
 import qualified IOList
 
-import Servant.Client
+import Servant.Client.Free
+import qualified Servant.Client as H
 
 import Data.Generics.Product
 import Control.Lens ( view, set, ALens, cloneLens )
@@ -30,6 +33,21 @@ import GitLab.Tickets
 
 import System.IO
 import Control.Monad.Trans.Except
+import Control.Monad.Free
+import Control.Monad.Error.Class
+
+toClientM :: ClientM a -> H.ClientM a
+toClientM c = iterM alg c
+  where
+    alg :: ClientF (H.ClientM a) -> H.ClientM a
+    alg (Throw err) = throwError err
+    alg (StreamingRequest {}) = error "streaming"
+    alg (RunRequest req k) =
+      (I.performRequest req ) >>= k
+
+runClientM :: ClientM a -> H.ClientEnv -> IO (Either ServantError a)
+runClientM = H.runClientM . toClientM
+
 
 
 {- Handler definitions -}
@@ -145,7 +163,7 @@ gitlabBaseUrl base = BaseUrl Https base 443 "api/v4"
 initialise :: UserConfig -> IO AppState
 initialise c = do
   mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
-  let env = mkClientEnv mgr
+  let env = H.mkClientEnv mgr
               (gitlabBaseUrl (view (field @"url" . to T.unpack) c))
       conf = (AppConfig c env)
 

@@ -21,7 +21,7 @@ import Data.Proxy
 import Data.String
 import Data.Time.Clock
 import Servant.API
-import Servant.Client
+import Servant.Client.Free
 import GitLab.Common
 
 data Visibility = Private | Internal | Public

@@ -20,8 +20,11 @@ import Data.Proxy
 import Data.String
 import Data.Time.Clock
 import Servant.API
-import Servant.Client
+import Servant.Client.Free
 import GHC.Generics
+import Control.Monad.Free
+
+type ClientM a = Free ClientF a
 
 
 (.=?) :: ToJSON a => Text -> Maybe a -> Maybe Pair

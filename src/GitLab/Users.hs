@@ -22,7 +22,7 @@ import Data.Proxy
 import Data.String
 import Data.Time.Clock
 import Servant.API
-import Servant.Client
+import Servant.Client.Free
 import Servant.API.ResponseHeaders
 import GitLab.Common
 import GHC.Generics
@@ -73,14 +73,6 @@ createUser tok cu = do
     user <- client (Proxy :: Proxy CreateUserAPI) (Just tok) cu
     return $ userId user
 
-createUserMaybe :: AccessToken -> CreateUser -> ClientM (Maybe UserId)
-createUserMaybe tok cu =
-    (Just <$> createUser tok cu)
-    `catchError`
-    (\err -> do
-        liftIO $ print err
-        return Nothing
-    )
 
 
 ----------------------------------------------------------------------
