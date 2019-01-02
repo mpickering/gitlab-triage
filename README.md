@@ -15,3 +15,13 @@ Features
 ![Ticket list](https://i.imgur.com/16U6sqi.png)
 
 ![Issue view](https://i.imgur.com/p10H3am.png)
+
+# Building
+
+The only tested configuration is with nix, installation with cabal and stack
+will be supported in the future.
+
+```
+nix-shell
+cabal run
+```
