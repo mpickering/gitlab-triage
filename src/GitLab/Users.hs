@@ -134,17 +134,18 @@ type GetUsersAPI =
     GitLabRoot :> "users"
     :> QueryParam "per_page" Int
     :> QueryParam "page" Int
+    :> QueryParam "search" Text
     :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int] [User]))
 
-getUsers :: AccessToken -> ClientM [User]
-getUsers tok = do
+getUsers :: Maybe Text -> AccessToken -> ClientM [User]
+getUsers search tok = do
   h <- mkReq 1
   let total = fromMaybe "1" $ lookup "X-Total-Pages" (getHeaders h )
       total_n = read (B.unpack total) :: Int
   us <- loop 2 2
-  return $ getResponse h ++ us
+  return $ getResponse h -- ++ us
   where
-    mkReq k = client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100) (Just k)
+    mkReq k = client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100) (Just k) search
     loop k n
      | k > n = return []
      | otherwise = do

@@ -8,6 +8,7 @@
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE DeriveAnyClass #-}
 module Autocomplete(mkAutocomplete
+                   , mkAutocompleteIO
                    , Autocomplete(..)
                    , drawAutocomplete
                    , handleAutocompleteEvent) where
@@ -31,9 +32,11 @@ import Data.Generics.Product
 import GHC.Generics
 import Control.Lens
 
+import Control.Monad.IO.Class (liftIO)
+
 data Autocomplete s n a
       = Autocomplete { autocompleteState :: s
-                     , autocompleteMatches :: Text -> s -> [a]
+                     , autocompleteMatches :: Text -> s -> IO [a]
                      , autocompleteToText :: a -> Text
                      , autocompleteCursor :: TextCursor
                      , autocompleteCursorFocus :: n
@@ -47,7 +50,16 @@ mkAutocomplete :: [a]
                -> n
                -> n
                -> Autocomplete [a] n a
-mkAutocomplete s m tt ini ns1 ns2 = Autocomplete s
+mkAutocomplete s m  = mkAutocompleteIO s (\t s' -> return (m t s'))
+
+mkAutocompleteIO :: [a]
+               -> (Text -> [a] -> IO [a])
+               -> (a -> Text)
+               -> Maybe Text
+               -> n
+               -> n
+               -> Autocomplete [a] n a
+mkAutocompleteIO s m tt ini ns1 ns2 = Autocomplete s
                                 m
                                 tt
                                 (fromMaybe emptyTextCursor $ (ini >>= makeTextCursor))
@@ -88,18 +100,18 @@ handleAutocompleteEvent ac (VtyEvent e) = do
                 Just (_, a) ->
                   return $ set (field @"autocompleteCursor")
                               (newCursor (autocompleteToText ac a)) ac2
-            V.KChar {} -> return $ updateAutocompleteItems ac2
-            V.KBS -> return $ updateAutocompleteItems ac2
-            V.KDel -> return $ updateAutocompleteItems ac2
+            V.KChar {} -> liftIO $ updateAutocompleteItems ac2
+            V.KBS -> liftIO $ updateAutocompleteItems ac2
+            V.KDel -> liftIO $ updateAutocompleteItems ac2
             _ -> return ac2
         _ -> return ac2
 handleAutocompleteEvent ac _ = return ac
 
-updateAutocompleteItems :: Autocomplete s n a -> Autocomplete s n a
-updateAutocompleteItems ac@Autocomplete{..} =
+updateAutocompleteItems :: Autocomplete s n a -> IO (Autocomplete s n a)
+updateAutocompleteItems ac@Autocomplete{..} = do
   let new_txt = rebuildTextCursor autocompleteCursor
-      matches = Vec.fromList (autocompleteMatches new_txt autocompleteState)
-  in over (field @"autocompleteList" ) (L.listReplace matches (Just 0)) ac
+  matches <- Vec.fromList <$> autocompleteMatches new_txt autocompleteState
+  return $ over (field @"autocompleteList" ) (L.listReplace matches (Just 0)) ac
 
 {- Text Cursor by Tom Kerokove -}
 

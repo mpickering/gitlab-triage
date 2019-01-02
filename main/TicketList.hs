@@ -109,7 +109,7 @@ startMilestoneDialog tl l =
         _      -> Just (WithMilestone t)
 
 startAuthorDialog tl l =
-  startDialog txtAuthorParam checkAuthor (field @"params" . field @"gipAuthor")
+  startDialogUsers txtAuthorParam checkAuthor (field @"params" . field @"gipAuthor")
               us tl l
   where
     us = view (field @"users") l
@@ -137,6 +137,30 @@ startWeightDialog tl l =
     checkWeight :: T.Text -> Maybe Int
     checkWeight t = parseMaybe @() decimal t
 
+--TODO: Unify with startDialog
+startDialogUsers :: (User -> T.Text)
+            -> (T.Text -> Maybe User)
+            -> ALens TicketList TicketList (Maybe User) (Maybe User)
+            -> [User]
+            -> TicketList
+            -> OperationalState
+            -> OperationalState
+startDialogUsers draw check place ini tl l =
+  let ini_state = view (cloneLens place) tl
+      state_t = draw <$> ini_state
+
+      ac =
+        mkAutocompleteIO
+          ini
+          (\t _ -> defaultEither [] $ runQuery
+                                        (view typed l)
+                                        (\tok _ -> getUsers (Just t) tok))
+          draw
+          state_t
+          (Dialog (MilestoneName False))
+          (Dialog (MilestoneName True))
+
+  in set typed (SearchParamsDialog check place ac) l
 
 
 startDialog :: (a -> T.Text)

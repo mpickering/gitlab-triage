@@ -150,7 +150,7 @@ initialise c = do
 
   cur_labels <- defaultEither [] $ runQuery conf getLabels
   cur_milestones <- defaultEither [] $ runQuery conf getMilestones
-  cur_users <- defaultEither [] $ runQuery conf (\tok _ -> getUsers tok)
+  cur_users <- defaultEither [] $ runQuery conf (\tok _ -> getUsers Nothing tok)
   cur_tickets <- loadTicketList defaultSearchParams conf
   let les = TicketListView cur_tickets
   let mm = Operational (OperationalState les FooterInfo NoDialog
