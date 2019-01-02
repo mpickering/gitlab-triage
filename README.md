@@ -10,3 +10,8 @@ Features
 * Quickly assign labels, comment and other metainformation to issues.
 * Advanced ticket querying along multiple axes
 
+# Screenshots
+
+![Ticket list](https://i.imgur.com/16U6sqi.png)
+
+![Issue view](https://i.imgur.com/p10H3am.png)
