@@ -233,9 +233,9 @@ drawTicketList _ tl = [ui]
 
     searchBox = drawSearchBox params
 
-    --total = str $ show $ Vec.length $ view L.listElementsL issues
+    total = str $ show $ L.lengthIL $ view L.listElementsL issues
 
-    box = B.border . vBox $ [
+    box = B.borderWithLabel total . vBox $ [
             L.renderList drawTicketRow True issues
             , str $ "Loaded Elems:"
                 ++ (show (length (L.toListPure (view L.listElementsL issues))))
