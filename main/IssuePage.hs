@@ -161,10 +161,6 @@ footer m = vLimit 1 $
     txt "r - reload; g - goto; c - comment; d - description; F10 - commit changes"
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
-formatFooterMode :: FooterInputMode -> T.Text
-formatFooterMode m = case m of
-                       FGoto      -> "g: "
-                       FGen h _ _ -> h <> ": "
 
 
 drawAuthor :: User -> Widget n

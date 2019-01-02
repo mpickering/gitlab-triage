@@ -264,3 +264,8 @@ showR = str . show
 
 drawDate :: T.Text -> T.Widget a
 drawDate = txt
+
+formatFooterMode :: FooterInputMode -> T.Text
+formatFooterMode m = case m of
+                       FGoto      -> "g: "
+                       FGen h _ _ -> h <> ": "

@@ -44,6 +44,8 @@ import Autocomplete
 import Common
 import Parsers
 
+import TextCursor
+
 
 
 ticketListHandler :: TicketList -> Handler OperationalState
@@ -225,7 +227,7 @@ ticketListEnter tl o = do
 --
 -- | Draw the ticket list page
 drawTicketList :: OperationalState -> TicketList -> [Widget Name]
-drawTicketList _ tl = [ui]
+drawTicketList l tl = [ui]
   where
     issues = view (field @"issues") tl
 
@@ -233,7 +235,10 @@ drawTicketList _ tl = [ui]
 
     searchBox = drawSearchBox params
 
-    footer = txt "g - goto ticket; ESC - quit"
+    footer im =
+      case im of
+      FooterInput fim t -> txt (formatFooterMode fim) <+> drawTextCursor t
+      _ -> txt "g - goto ticket; ESC - quit"
 
     total = str $ show $ L.lengthIL $ view L.listElementsL issues
 
@@ -244,7 +249,7 @@ drawTicketList _ tl = [ui]
             , B.hBorder
             , searchBox
             , B.hBorder
-            , footer
+            , footer (view (typed @FooterMode) l)
             ]
 
     ui = C.vCenter $ vBox [ C.hCenter box
