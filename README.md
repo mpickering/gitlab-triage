@@ -12,9 +12,8 @@ Features
 
 # Screenshots
 
-![Ticket list](https://i.imgur.com/16U6sqi.png)
-
-![Issue view](https://i.imgur.com/p10H3am.png)
+<img src="https://i.imgur.com/16U6sqi.png" width=50%>
+<img src="https://i.imgur.com/p10H3am.png" width=50%>
 
 # Building
 
