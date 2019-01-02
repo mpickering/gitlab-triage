@@ -19,6 +19,7 @@ import Data.Text (Text)
 
 import qualified IOList
 import Cache
+import qualified Network.HTTP.Client                as HTTP
 
 
 
@@ -92,4 +93,5 @@ data DialogMode where
 data AppConfig = AppConfig {
                     userConfig :: UserConfig
                   , reqEnv :: ClientEnv
+                  , cache :: MCache HTTP.Request (Either ServantError Response)
                   } deriving Generic

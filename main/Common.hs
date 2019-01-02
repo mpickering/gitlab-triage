@@ -2,10 +2,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 module Common where
 
 import qualified Servant.Client.Internal.HttpClient as I
---import qualified Network.HTTP.Client                as HTTP
+import qualified Network.HTTP.Client                as HTTP
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
@@ -36,6 +37,10 @@ import Control.Monad.Trans.Except
 import Control.Monad.Free
 import Control.Monad.Error.Class
 
+import Data.Hashable
+
+import Cache
+
 toClientM :: ClientM a -> H.ClientM a
 toClientM c = iterM alg c
   where
@@ -47,6 +52,38 @@ toClientM c = iterM alg c
 
 runClientM :: ClientM a -> H.ClientEnv -> IO (Either ServantError a)
 runClientM = H.runClientM . toClientM
+
+runClientWithCache ::
+                    MCache HTTP.Request (Either ServantError Response)
+                    -> ClientM a
+                    -> H.ClientEnv
+                    -> IO (Either ServantError a)
+runClientWithCache mcache c e = iterM alg (fmap Right c)
+  where
+    alg :: ClientF (IO (Either ServantError a)) -> IO (Either ServantError a)
+    alg (RunRequest req k) = do
+      let req' = I.requestToClientRequest (H.baseUrl e) req
+      res <- lookupOrInsertCache req'
+                                 (I.runClientM (I.performRequest req) e)
+                                 mcache
+      case res of
+        Left err -> return (Left err)
+        Right v  -> k v
+    alg (Throw err) = (return (Left err))
+    alg (StreamingRequest {}) = error "streaming"
+
+instance Ord (HTTP.Request) where
+  compare t1 t2 = compare (show t1) (show t2)
+
+instance Eq HTTP.Request where
+  (==) t1 t2 = show t1 == show t2
+
+instance Hashable HTTP.Request where
+  hashWithSalt i r = hashWithSalt i (show r)
+
+
+
+
 
 
 
@@ -92,7 +129,8 @@ runQuery l q = do
   let tok   = view (field @"userConfig" . field @"token") l
       reqEnv'  = view (field @"reqEnv") l
       project' = view (field @"userConfig" . field @"project") l
-  ExceptT $ runClientM (q tok project') reqEnv'
+      mcache = view (field @"cache") l
+  ExceptT $ runClientWithCache mcache (q tok project') reqEnv'
 
 runQueryPaginate :: forall a . AppConfig
                  -> (Maybe Int -> AccessToken -> ProjectId
@@ -163,9 +201,10 @@ gitlabBaseUrl base = BaseUrl Https base 443 "api/v4"
 initialise :: UserConfig -> IO AppState
 initialise c = do
   mgr <- TLS.newTlsManagerWith $ TLS.mkManagerSettings tlsSettings Nothing
+  mcache <- newCache 100000000
   let env = H.mkClientEnv mgr
               (gitlabBaseUrl (view (field @"url" . to T.unpack) c))
-      conf = (AppConfig c env)
+      conf = (AppConfig c env mcache)
 
   cur_labels <- defaultEither [] $ runQuery conf getLabels
   cur_milestones <- defaultEither [] $ runQuery conf getMilestones
