@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Common where
 
 import Network.HTTP.Client.TLS as TLS
@@ -150,7 +151,8 @@ initialise c = do
 
   cur_labels <- defaultEither [] $ runQuery conf getLabels
   cur_milestones <- defaultEither [] $ runQuery conf getMilestones
-  cur_users <- defaultEither [] $ runQuery conf (\tok _ -> getUsers Nothing tok)
+  cur_users <- defaultEither []
+                $ runQuery conf (\tok _ -> getUsers Nothing Nothing tok)
   cur_tickets <- loadTicketList defaultSearchParams conf
   let les = TicketListView cur_tickets
   let mm = Operational (OperationalState les FooterInfo NoDialog
@@ -173,6 +175,18 @@ loadTicketList sp conf = do
   es <- defaultEither IOList.nil $ runQueryPaginate conf (getIssues sp)
   --let es = IOList.nil
   return $ (TicketList (IOList.list IssueList es 1 50) sp)
+
+checkAuthor :: AppConfig -> T.Text -> IO (Maybe User)
+checkAuthor ac t =
+      defaultEither Nothing $
+      runQuery ac (\tok _ -> getUserByUsername t tok)
+
+-- API calls on empty string take ages
+restrictAuthor :: AppConfig -> T.Text -> [User] -> IO [User]
+restrictAuthor _ "" us = return us
+restrictAuthor ac t _ =
+  defaultEither [] $ runQuery ac
+                              (\tok _ -> getUsers Nothing (Just t) tok)
 
 ---
 

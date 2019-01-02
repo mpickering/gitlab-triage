@@ -109,26 +109,39 @@ startMilestoneDialog tl l =
         _      -> Just (WithMilestone t)
 
 startAuthorDialog tl l =
-  startDialogUsers txtAuthorParam checkAuthor (field @"params" . field @"gipAuthor")
+  startDialogIO txtAuthorParam (checkAuthor ac) (restrictAuthor ac)
+                   (field @"params" . field @"gipAuthor")
               us tl l
   where
     us = view (field @"users") l
 
-    checkAuthor t = lookupUser t us
+    ac = view (typed @AppConfig) l
+
+
 
 startOwnerDialog tl l =
-  startDialog txtAssigneeParam checkAssignee (field @"params" . field @"gipAssignee")
-              ([AssignedNone, AssignedAny] ++ as) tl l
+  startDialogIO txtAssigneeParam checkAssignee
+              restrict
+              (field @"params" . field @"gipAssignee")
+              ini tl l
   where
     us = view (field @"users") l
 
     as = map AssignedTo us
 
+    ini = ([AssignedNone, AssignedAny] ++ as)
+
+    restrict t _=
+      ([AssignedNone, AssignedAny] ++) .
+        map AssignedTo <$> restrictAuthor ac t us
+
+    ac = view (typed @AppConfig) l
+
     checkAssignee t =
       case T.toLower t of
-        "none" -> Just AssignedNone
-        "any"  -> Just AssignedAny
-        _      -> AssignedTo <$> lookupUser t us
+        "none" -> return $ Just AssignedNone
+        "any"  -> return $ Just AssignedAny
+        _      -> fmap AssignedTo <$> checkAuthor ac t
 
 startWeightDialog tl l =
   startDialog txtWeightParam checkWeight (field @"params" . field @"gipWeight")
@@ -138,27 +151,27 @@ startWeightDialog tl l =
     checkWeight t = parseMaybe @() decimal t
 
 --TODO: Unify with startDialog
-startDialogUsers :: (User -> T.Text)
-            -> (T.Text -> Maybe User)
-            -> ALens TicketList TicketList (Maybe User) (Maybe User)
-            -> [User]
+startDialogIO :: (a -> T.Text)
+            -> (T.Text -> IO (Maybe a))
+            -> (T.Text -> [a] -> IO [a])
+            -> ALens TicketList TicketList (Maybe a) (Maybe a)
+            -> [a]
             -> TicketList
             -> OperationalState
             -> OperationalState
-startDialogUsers draw check place ini tl l =
+startDialogIO draw check restrict place ini tl l =
   let ini_state = view (cloneLens place) tl
       state_t = draw <$> ini_state
 
       ac =
         mkAutocompleteIO
           ini
-          (\t _ -> defaultEither [] $ runQuery
-                                        (view typed l)
-                                        (\tok _ -> getUsers (Just t) tok))
+          restrict
           draw
           state_t
           (Dialog (MilestoneName False))
           (Dialog (MilestoneName True))
+
 
   in set typed (SearchParamsDialog check place ac) l
 
@@ -183,7 +196,7 @@ startDialog draw check place ini tl l =
           (Dialog (MilestoneName False))
           (Dialog (MilestoneName True))
 
-  in set typed (SearchParamsDialog check place ac) l
+  in set typed (SearchParamsDialog (return . check) place ac) l
 
 startStateDialog :: TicketList -> OperationalState -> OperationalState
 startStateDialog =

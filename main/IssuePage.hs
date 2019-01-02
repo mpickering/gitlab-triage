@@ -357,15 +357,17 @@ startOwnerInput :: IssuePage
 startOwnerInput ip os =
   let users = view (field @"users") os
       draw  = T.intercalate ", " . map (view (field @"userUsername"))
-  in startDialog (checkUserInput users)
-                 draw
-                 (typed @Updates . typed @EditIssue . field @"eiAssignees")
-                 (typed @IssueResp . field @"irAssignees")
-                 (map (:[]) users)
-                 ip os
+      ac = view (typed @AppConfig) os
+  in startDialogIO (fmap (fmap (:[])) . checkAuthor ac)
+                   (\t _ -> map (:[]) <$> restrictAuthor ac t users)
+                   draw
+                   (typed @Updates . typed @EditIssue . field @"eiAssignees")
+                   (typed @IssueResp . field @"irAssignees")
+                   (map (:[]) users)
+                   ip os
 
 
-startDialog :: (T.Text -> Maybe a)
+startDialog :: (T.Text -> (Maybe a))
             -> (a -> T.Text)
             -> (ALens IssuePage IssuePage (Maybe a) (Maybe a))
             -> (ALens IssuePage IssuePage a a)
@@ -373,14 +375,30 @@ startDialog :: (T.Text -> Maybe a)
             -> IssuePage
             -> OperationalState
             -> EventM Name (Next OperationalState)
-startDialog check draw upd_place cur_place ini ip os =
+startDialog check draw =
+  startDialogIO (return . check)
+                (\t s -> return $ filter (\v -> T.toLower t
+                                                  `T.isInfixOf`
+                                                  (T.toLower (draw v))) s)
+                draw
+
+startDialogIO :: (T.Text -> IO (Maybe a))
+              -> (T.Text -> [a] -> IO [a])
+              -> (a -> T.Text)
+              -> (ALens IssuePage IssuePage (Maybe a) (Maybe a))
+              -> (ALens IssuePage IssuePage a a)
+              -> [a]
+              -> IssuePage
+              -> OperationalState
+              -> EventM Name (Next OperationalState)
+startDialogIO check restrict draw upd_place cur_place ini ip os =
   let ini_state = view (cloneLens cur_place) ip
       state_t = draw ini_state
 
       ac =
-        mkAutocomplete
+        mkAutocompleteIO
           ini
-          (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s)
+          restrict
           draw
           (Just state_t)
           (Dialog (MilestoneName False))

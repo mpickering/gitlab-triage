@@ -177,10 +177,10 @@ handleDialogEvent dc l re  =
 dispatchDialogInput :: DialogMode
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
-dispatchDialogInput (IssuePageDialog check place mac) l =
+dispatchDialogInput (IssuePageDialog check place mac) l = do
   let tc = view (field @"autocompleteCursor") mac
-  in
-  case check (rebuildTextCursor tc) of
+  res <- liftIO $ check (rebuildTextCursor tc)
+  case res of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
       M.continue $ set (typed @Mode . _Ctor @"IssueView" . cloneLens place)
@@ -188,9 +188,11 @@ dispatchDialogInput (IssuePageDialog check place mac) l =
 dispatchDialogInput (SearchParamsDialog check place mac) l = do
   if (T.null rbc)
     then (update Nothing)
-    else (case check rbc of
-            Nothing  -> M.continue (resetDialog l)
-            Just mid -> update (Just mid))
+    else do
+      res <- liftIO $ check rbc
+      case res of
+        Nothing  -> M.continue (resetDialog l)
+        Just mid -> update (Just mid)
   where
     tc = view (field @"autocompleteCursor") mac
     rbc = rebuildTextCursor tc

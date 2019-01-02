@@ -135,23 +135,34 @@ type GetUsersAPI =
     :> QueryParam "per_page" Int
     :> QueryParam "page" Int
     :> QueryParam "search" Text
+    :> QueryParam "username" Text
     :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int] [User]))
 
-getUsers :: Maybe Text -> AccessToken -> ClientM [User]
-getUsers search tok = do
+getUsers :: Maybe Text -> Maybe Text -> AccessToken -> ClientM [User]
+getUsers usrname search tok = do
   h <- mkReq 1
   let total = fromMaybe "1" $ lookup "X-Total-Pages" (getHeaders h )
       total_n = read (B.unpack total) :: Int
+  return $ getResponse h
+  where
+    mkReq k = client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100) (Just k) search usrname
+
+getUserByUsername :: Text -> AccessToken -> ClientM (Maybe User)
+getUserByUsername usrname tok =
+  listToMaybe <$> getUsers (Just usrname) Nothing tok
+
+{-
   us <- loop 2 2
   return $ getResponse h -- ++ us
   where
-    mkReq k = client (Proxy :: Proxy GetUsersAPI) (Just tok) (Just 100) (Just k) search
     loop k n
      | k > n = return []
      | otherwise = do
           us <- getResponse <$> mkReq k
           uss <- loop (k + 1) n
           return $ us ++ uss
+-}
+
 
 
 

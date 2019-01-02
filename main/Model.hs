@@ -78,11 +78,11 @@ type AppAutocomplete a = Autocomplete [a] Name a
 data DialogMode where
   NoDialog :: DialogMode
   IssuePageDialog ::
-    (Text -> Maybe a) ->
+    (Text -> IO (Maybe a)) ->
     (ALens IssuePage IssuePage (Maybe a) (Maybe a)) ->
     (AppAutocomplete a) -> DialogMode
   SearchParamsDialog ::
-    (Text -> Maybe a) ->
+    (Text -> IO (Maybe a)) ->
     (ALens TicketList TicketList (Maybe a) (Maybe a)) ->
     (AppAutocomplete a) ->
     DialogMode
