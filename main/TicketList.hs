@@ -257,10 +257,12 @@ drawTicketList l tl = [ui]
 
 drawTicketRow :: Bool -> IssueResp -> Widget n
 drawTicketRow _ IssueResp{..} =
-    vLimit 1 $ hBox
+    withAttr state_attr $ vLimit 1 $ hBox
         [ hLimit 6 $ padRight Max $ int (unIssueIid irIid)
         , padRight Max $ txt irTitle
         , padLeft (Pad 1) $ txt irState]
+  where
+    state_attr = attrName (T.unpack irState)
 
 drawSearchBox :: GetIssuesParams -> Widget n
 drawSearchBox GetIssuesParams{..} =

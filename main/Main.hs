@@ -276,13 +276,15 @@ customAttr = L.listSelectedAttr <> "custom"
 
 theMap :: AppState -> A.AttrMap
 theMap _ = A.attrMap V.defAttr
-    [ (L.listAttr,            V.white `on` V.blue)
-    , (L.listSelectedAttr,    V.blue `on` V.white)
+    [ (L.listAttr,            V.blue `on` V.white)
+    , (L.listSelectedAttr,    V.withStyle V.currentAttr V.bold)
     , (customAttr,            fg V.cyan)
     , (invalidFormInputAttr, V.white `on` V.red)
     , (focusedFormInputAttr, V.black `on` V.yellow)
     , ("changed", V.red `on` V.black)
     , ("default", V.defAttr )
+    --, ("closed", V.withStyle V.currentAttr V.dim )
+    , ("closed", V.white `on` V.red )
     ]
 
 
