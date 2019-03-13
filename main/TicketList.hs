@@ -46,12 +46,12 @@ import Parsers
 
 import TextCursor
 
-
+import Debug.Trace
 
 ticketListHandler :: TicketList -> Handler OperationalState
 ticketListHandler tl l (T.VtyEvent e) =
   case e of
-    V.EvKey V.KEsc [] -> M.halt l
+    V.EvKey (V.KChar 'q') [V.MCtrl] -> M.halt l
     V.EvKey V.KEnter [] -> ticketListEnter tl l
     V.EvKey (V.KChar 's') [] -> M.continue (startStateDialog tl l)
     V.EvKey (V.KChar 'c') [] -> M.continue (startScopeDialog tl l)
@@ -246,7 +246,7 @@ drawTicketList l tl = [ui]
     footer im =
       case im of
       FooterInput fim t -> txt (formatFooterMode fim) <+> drawTextCursor t
-      _ -> txt "g - goto ticket; ESC - quit"
+      _ -> txt "g - goto ticket; C-q - quit"
 
     total = str $ show $ L.lengthIL $ view L.listElementsL issues
 
