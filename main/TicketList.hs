@@ -228,7 +228,7 @@ ticketListEnter tl o = do
     Nothing -> M.continue o
     Just (_, t) -> do
       displayError (loadByIssueResp t (view (typed @AppConfig) o))
-                   (\v -> M.continue . issueView o $ v)
+                   (\v -> M.continue . issueView o $ IssuePage tl v)
                    o
 
 ---

@@ -11,7 +11,7 @@ import Servant.Client.Core.Internal.Request
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
-import Control.Lens ( to )
+import Control.Lens ( to, firstOf )
 
 import Control.Monad.Reader
 import qualified Brick.Main as M
@@ -184,18 +184,18 @@ issueView l n = set (field @"mode") (IssueView n) l
 {- Running external queries -}
 
 
-loadByIid :: IssueIid -> AppConfig -> ExceptT ServantError IO IssuePage
+loadByIid :: IssueIid -> AppConfig -> ExceptT ServantError IO (IssuePageContents)
 loadByIid iid ac = do
   r <- runQuery ac (getOneIssue iid)
   loadByIssueResp r ac
 
-loadByIssueResp :: IssueResp -> AppConfig -> ExceptT ServantError IO IssuePage
+loadByIssueResp :: IssueResp -> AppConfig -> ExceptT ServantError IO (IssuePageContents)
 loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
   links' <- runQuery l (\tok prj -> listIssueLinks tok prj iid)
   let emptyUpdates = Updates Nothing noEdits
-  return $ (IssuePage (L.list Notes (Vec.fromList es_n) 6) t emptyUpdates links')
+  return $ (IssuePageContents (L.list Notes (Vec.fromList es_n) 6) t emptyUpdates links')
 
 tlsSettings :: TLSSettings
 tlsSettings = def { settingDisableCertificateValidation = False }
@@ -238,6 +238,22 @@ loadTicketList sp conf = do
   --let es = IOList.nil
   return $ (TicketList (IOList.list IssueList es 1 50) sp)
 
+--
+getTicketListContext :: OperationalState -> TicketList
+getTicketListContext o =
+  case view (typed @Mode) o of
+    TicketListView tl -> tl
+    IssueView (IssuePage tl _) -> tl
+
+
+
+{-
+  case firstOf (types @TicketList) o of
+    Just tl -> tl
+    Nothing -> error "ticketListContext: Should be non-empty traversal"
+    -}
+
+
 checkAuthor :: AppConfig -> T.Text -> IO (Maybe User)
 checkAuthor ac t =
       defaultEither Nothing $
@@ -267,5 +283,6 @@ drawDate = txt
 
 formatFooterMode :: FooterInputMode -> T.Text
 formatFooterMode m = case m of
-                       FGoto      -> "g: "
+                       FGoto {}   -> "g: "
                        FGen h _ _ -> h <> ": "
+

@@ -183,7 +183,7 @@ dispatchDialogInput (IssuePageDialog check place mac) l = do
   case res of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
-      M.continue $ set (typed @Mode . _Ctor @"IssueView" . cloneLens place)
+      M.continue $ set (typed @Mode . _Ctor @"IssueView" . typed @IssuePageContents . cloneLens place)
                        (Just mid) (resetDialog l)
 dispatchDialogInput (SearchParamsDialog check place mac) l = do
   if (T.null rbc)
@@ -216,7 +216,7 @@ infoFooterHandler :: Handler OperationalState -> Handler OperationalState
 infoFooterHandler k l re@(T.VtyEvent e) =
   case e of
     V.EvKey (V.KChar 'g') [] ->
-      M.continue (set typed (FooterInput FGoto emptyTextCursor) l)
+      M.continue (set typed (FooterInput (FGoto (getTicketListContext l)) emptyTextCursor) l)
     _ev -> k l re
 infoFooterHandler k l re = k l re
 
@@ -239,12 +239,12 @@ dispatchFooterInput :: FooterInputMode
                     -> TextCursor
                     -> OperationalState
                     -> EventM n (Next OperationalState)
-dispatchFooterInput FGoto tc l =
+dispatchFooterInput (FGoto tl) tc l =
   case checkGotoInput (rebuildTextCursor tc) of
     Nothing -> M.continue (resetFooter l)
     Just iid -> do
       displayError (loadByIid iid (view typed l))
-                   (M.continue . resetFooter . issueView l)
+                   (M.continue . resetFooter . issueView l . IssuePage tl)
                    l
 dispatchFooterInput (FGen _ check place)  tc l =
   case check (rebuildTextCursor tc) of
@@ -254,7 +254,8 @@ dispatchFooterInput (FGen _ check place)  tc l =
 
 
 issueEdit :: Traversal' OperationalState EditIssue
-issueEdit = typed @Mode . _Ctor @"IssueView" . field @"updates" . typed @EditIssue
+issueEdit = typed @Mode . _Ctor @"IssueView" . typed @IssuePageContents
+          . field @"updates" . typed @EditIssue
 
 resetDialog :: OperationalState -> OperationalState
 resetDialog l = (set typed NoDialog l)

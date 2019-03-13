@@ -52,6 +52,11 @@ data TicketList = TicketList {
                     } deriving Generic
 
 data IssuePage = IssuePage {
+                  ticketListContext :: TicketList
+                  , issuePage :: IssuePageContents
+                  } deriving Generic
+
+data IssuePageContents = IssuePageContents {
                   issueNotes :: L.List Name IssueNoteResp
                   , currentIssue :: IssueResp
                   , updates :: Updates
@@ -67,7 +72,7 @@ data FooterMode = FooterInfo  -- Display generic info
                 | FooterInput FooterInputMode TextCursor  -- Accept input
                 deriving Generic
 
-data FooterInputMode = FGoto
+data FooterInputMode = FGoto TicketList
                       | forall a . FGen Text
                                        (Text -> Maybe a)
                                        (ALens EditIssue EditIssue (Maybe a) (Maybe a))
@@ -81,7 +86,7 @@ data DialogMode where
   NoDialog :: DialogMode
   IssuePageDialog ::
     (Text -> IO (Maybe a)) ->
-    (ALens IssuePage IssuePage (Maybe a) (Maybe a)) ->
+    (ALens IssuePageContents IssuePageContents (Maybe a) (Maybe a)) ->
     (AppAutocomplete a) -> DialogMode
   SearchParamsDialog ::
     (Text -> IO (Maybe a)) ->

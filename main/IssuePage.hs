@@ -57,7 +57,7 @@ drawIssueView fm l = [drawIssuePage fm l]
 
 
 drawIssuePage :: FooterMode -> IssuePage -> Widget Name
-drawIssuePage fm l =
+drawIssuePage fm (IssuePage _ l) =
   B.border (vBox [metainfo, desc, notesSect
                  , updateLog, B.hBorder, footer fm])
   where
@@ -192,7 +192,7 @@ metaRow metaLabel widget = vLimit 2 (B.hBorderWithLabel (txt metaLabel))
 --o
 
 -- Events which operate only on internal state
-internalIssuePageHandler :: HandlerR IssuePage
+internalIssuePageHandler :: HandlerR IssuePageContents
 internalIssuePageHandler l (T.VtyEvent e) =
   case e of
     V.EvKey (V.KChar 's') [] ->
@@ -211,14 +211,14 @@ internalIssuePageHandler l (T.VtyEvent e) =
             =<< lift (handleEventLensed l (field @"issueNotes") L.handleListEvent ev)
 internalIssuePageHandler l _ = continue l
 
-editDescriptionHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
+editDescriptionHandler :: IssuePageContents -> ReaderT AppConfig (EventM Name) (Next IssuePageContents)
 editDescriptionHandler ip = do
   let desc = view (typed @IssueResp . field @"irDescription") ip
       mod_desc = view (typed @Updates . typed @EditIssue . field @"eiDescription") ip
       init_desc = fromMaybe desc mod_desc
   lift $ invokeExternalEditor (Just init_desc) (postCommentAndUpdate ip)
   where
-    postCommentAndUpdate :: IssuePage -> Maybe T.Text -> IO IssuePage
+    postCommentAndUpdate :: IssuePageContents -> Maybe T.Text -> IO IssuePageContents
     postCommentAndUpdate ip' t =
       case t of
         Nothing -> return ip'
@@ -228,7 +228,7 @@ editDescriptionHandler ip = do
             (set (field @"updates" . typed @EditIssue . field @"eiDescription")
               (Just descText) ip)
 
-newCommentHandler :: IssuePage -> ReaderT AppConfig (EventM Name) (Next IssuePage)
+newCommentHandler :: IssuePageContents -> ReaderT AppConfig (EventM Name) (Next IssuePageContents)
 newCommentHandler ip = do
 
   let mod_cin = view (typed @Updates . field @"comment") ip
@@ -236,7 +236,7 @@ newCommentHandler ip = do
 
   lift $ invokeExternalEditor mod_comment (postCommentAndUpdate ip)
   where
-    postCommentAndUpdate :: IssuePage -> Maybe T.Text -> IO IssuePage
+    postCommentAndUpdate :: IssuePageContents -> Maybe T.Text -> IO IssuePageContents
     postCommentAndUpdate ip' t =
       case t of
         Nothing -> return ip'
@@ -247,23 +247,21 @@ newCommentHandler ip = do
 
 -- | Events which change the mode
 issuePageHandler :: IssuePage -> Handler OperationalState
-issuePageHandler ip l e =
+issuePageHandler (IssuePage tl ip) l e =
   case e of
     (T.VtyEvent (V.EvKey V.KEsc [])) -> do
-      tl <- liftIO $ loadTicketList defaultSearchParams (view (typed @AppConfig) l)
-      invalidateCache
       M.continue (set typed (TicketListView tl) l)
     (T.VtyEvent (V.EvKey (V.KChar 't') []))  -> startTitleInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'l') []))  -> startLabelInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'm') []))  -> startMilestoneInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'o') []))  -> startOwnerInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'w') []))  -> startWeightInput ip l
-    (T.VtyEvent (V.EvKey (V.KFun 10) [])) -> applyChanges ip l
+    (T.VtyEvent (V.EvKey (V.KFun 10) [])) -> applyChanges (IssuePage tl ip) l
     _ ->
-      liftHandler typed ip IssueView
+      liftHandler typed ip (IssueView . IssuePage tl)
         (demote (view typed l) internalIssuePageHandler) l e
 
-startTitleInput :: IssuePage
+startTitleInput :: IssuePageContents
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
 startTitleInput tl l =
@@ -276,7 +274,7 @@ startTitleInput tl l =
                  (FooterInput dispatcher
                  (fromMaybe emptyTextCursor $ makeTextCursor title_t)) l)
 
-startLabelInput :: IssuePage
+startLabelInput :: IssuePageContents
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
 startLabelInput tl l =
@@ -290,7 +288,7 @@ startLabelInput tl l =
                  (FooterInput dispatcher
                  (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
 
-startWeightInput :: IssuePage
+startWeightInput :: IssuePageContents
                 -> OperationalState
                 -> EventM Name (Next OperationalState)
 startWeightInput tl l =
@@ -329,7 +327,7 @@ ownerAutocomplete us ini =
     (Dialog (OwnerName True))
 
 
-startMilestoneInput :: IssuePage
+startMilestoneInput :: IssuePageContents
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
 startMilestoneInput ip os =
@@ -337,7 +335,8 @@ startMilestoneInput ip os =
       draw Nothing = ""
       draw (Just m) = view (field @"mrTitle") m
 
-      place :: ALens IssuePage IssuePage (Maybe MilestoneResp)
+      place :: ALens IssuePageContents IssuePageContents
+                                         (Maybe MilestoneResp)
                                          (Maybe MilestoneResp)
       place = typed @IssueResp . field @"irMilestone"
   in startDialog (checkMilestoneInput milestones)
@@ -348,7 +347,7 @@ startMilestoneInput ip os =
                  ip os
 
 
-startOwnerInput :: IssuePage
+startOwnerInput :: IssuePageContents
                     -> OperationalState
                     -> EventM Name (Next OperationalState)
 startOwnerInput ip os =
@@ -366,10 +365,10 @@ startOwnerInput ip os =
 
 startDialog :: (T.Text -> (Maybe a))
             -> (a -> T.Text)
-            -> (ALens IssuePage IssuePage (Maybe a) (Maybe a))
-            -> (ALens IssuePage IssuePage a a)
+            -> (ALens IssuePageContents IssuePageContents (Maybe a) (Maybe a))
+            -> (ALens IssuePageContents IssuePageContents a a)
             -> [a]
-            -> IssuePage
+            -> IssuePageContents
             -> OperationalState
             -> EventM Name (Next OperationalState)
 startDialog check draw =
@@ -382,10 +381,10 @@ startDialog check draw =
 startDialogIO :: (T.Text -> IO (Maybe a))
               -> (T.Text -> [a] -> IO [a])
               -> (a -> T.Text)
-              -> (ALens IssuePage IssuePage (Maybe a) (Maybe a))
-              -> (ALens IssuePage IssuePage a a)
+              -> (ALens IssuePageContents IssuePageContents (Maybe a) (Maybe a))
+              -> (ALens IssuePageContents IssuePageContents a a)
               -> [a]
-              -> IssuePage
+              -> IssuePageContents
               -> OperationalState
               -> EventM Name (Next OperationalState)
 startDialogIO check restrict draw upd_place cur_place ini ip os =
@@ -406,7 +405,7 @@ startDialogIO check restrict draw upd_place cur_place ini ip os =
 
 
 applyChanges :: IssuePage -> OperationalState -> EventM Name (Next OperationalState)
-applyChanges ip o = do
+applyChanges (IssuePage tl ip) o = do
   let iid = view (typed @IssueResp  . field @"irIid") ip
       (Updates c ei)  = view (typed @Updates) ip
       ac = view (typed @AppConfig) o
@@ -417,7 +416,7 @@ applyChanges ip o = do
             runQuery ac (\tok p -> createIssueNote tok Nothing p iid note))
         -- Could save one request here if we use the response from editIssue
           loadByIid iid ac)
-          (\v -> invalidateCache >> M.continue (set typed (IssueView v) o)) o
+          (\v -> invalidateCache >> M.continue (set typed (IssueView (IssuePage tl v)) o)) o
 
 demote :: AppConfig -> HandlerR a -> Handler a
 demote ac h a e = runReaderT (h a e) ac
