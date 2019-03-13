@@ -60,6 +60,7 @@ ticketListHandler tl l (T.VtyEvent e) =
     V.EvKey (V.KChar 'a') [] -> M.continue (startAuthorDialog tl l)
     V.EvKey (V.KChar 'o') [] -> M.continue (startOwnerDialog tl l)
     V.EvKey (V.KChar 'w') [] -> M.continue (startWeightDialog tl l)
+    V.EvKey (V.KChar '/') [] -> M.continue (startSearchDialog tl l)
     _ -> do
       res <- L.handleListEvent e (view typed tl)
       let tl' = set (field @"issues") res tl
@@ -68,7 +69,7 @@ ticketListHandler _ l _ = M.continue l
 
 startScopeDialog, startLabelDialog,
   startMilestoneDialog, startAuthorDialog,
-  startOwnerDialog, startWeightDialog
+  startOwnerDialog, startWeightDialog, startSearchDialog
   :: TicketList
   -> OperationalState
   -> OperationalState
@@ -151,6 +152,13 @@ startWeightDialog tl l =
   where
     checkWeight :: T.Text -> Maybe Int
     checkWeight t = parseMaybe @() decimal t
+
+startSearchDialog tl l =
+  startDialog id checkSearch (field @"params" . field @"gipSearch")
+            [] tl l
+  where
+    checkSearch :: T.Text -> Maybe T.Text
+    checkSearch t = Just t
 
 --TODO: Unify with startDialog
 startDialogIO :: (a -> T.Text)
@@ -273,6 +281,7 @@ drawSearchBox GetIssuesParams{..} =
        , row "(A)uthor" drawAuthorParam gipAuthor
        , row "(O)wner" drawAssigneeParam gipAssignee
        , row "(W)eight" drawWeightParam gipWeight
+       , row "(/)earch" drawSearchParam gipSearch
        ]
   where
     row herald f w = txt herald <+> txt ": " <+> maybe emptyWidget f w
@@ -333,3 +342,6 @@ txtWeightParam = T.pack . show
 
 drawWeightParam :: Int -> Widget n
 drawWeightParam = txt . txtWeightParam
+
+drawSearchParam :: T.Text -> Widget n
+drawSearchParam = txt

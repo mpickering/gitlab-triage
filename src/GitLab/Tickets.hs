@@ -166,6 +166,7 @@ data GetIssuesParams
       , gipAuthor :: Maybe User
       , gipAssignee :: Maybe AssigneeParam
       , gipWeight :: Maybe Int
+      , gipSearch :: Maybe Text
       } deriving (Generic, Show)
 
 defaultSearchParams :: GetIssuesParams
@@ -175,6 +176,7 @@ defaultSearchParams =
     Nothing
     Nothing
     (Just AllScope)
+    Nothing
     Nothing
     Nothing
     Nothing
@@ -230,6 +232,7 @@ type GetIssueAPI =
     :> QueryParam "author_id" UserId
     :> QueryParam "assignee_id" AssigneeParam
     :> QueryParam "weight" Int
+    :> QueryParam "search" Text
     :> QueryParam "page" Int
     :> QueryParam "per_page" Int
     :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int
@@ -260,6 +263,7 @@ getIssues GetIssuesParams{..} mb_page tok prj = do
       (userId <$> gipAuthor)
       gipAssignee
       gipWeight
+      gipSearch
       mb_page
       (Just 100)
   let hs = getHeaders res
