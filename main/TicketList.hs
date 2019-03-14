@@ -260,7 +260,6 @@ txtScope AllScope = "All"
 drawScope :: ScopeParam -> Widget n
 drawScope = txt . txtScope
 
-txtLabelParam :: LabelParam -> T.Text
 txtLabelParam l =
   case l of
     WithLabels (Labels ts) -> T.intercalate ", " (S.toList ts)

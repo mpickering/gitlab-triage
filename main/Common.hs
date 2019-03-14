@@ -21,6 +21,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import Brick
 import qualified IOList
+import qualified Data.Set as S
 
 import Servant.Client.Free
 import qualified Servant.Client as H
@@ -273,8 +274,6 @@ restrictLabel ac t us =  return us
 --  defaultEither [] $ runQuery ac (\tok _ -> getL
 
 ---
-
-
 
 {- drawing helpers -}
 

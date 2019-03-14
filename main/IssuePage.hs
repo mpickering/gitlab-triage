@@ -23,6 +23,7 @@ import Control.Lens (view, set, ALens, cloneLens)
 import Control.Monad (void)
 import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
+import Data.List.NonEmpty (NonEmpty (..))
 
 import qualified Brick.Main as M
 import qualified Brick.Types as T
@@ -281,13 +282,29 @@ startLabelInput :: IssuePageContents
 startLabelInput tl l =
   let labels_ini = view (typed @IssueResp . field @"irLabels") tl
       labels_mod = view (typed @Updates . typed @EditIssue . field @"eiLabels") tl
-      (Labels cur_labels) = fromMaybe labels_ini labels_mod
-      labels_t = T.intercalate ", " (S.toList cur_labels)
+      cur_labels = fromMaybe labels_ini labels_mod
 
-      dispatcher = FGen "label" checkLabelInput (field @"eiLabels")
-  in M.continue (set typed
-                 (FooterInput dispatcher
-                 (fromMaybe emptyTextCursor $ makeTextCursor labels_t)) l)
+      place = (typed @Updates . typed @EditIssue . field @"eiLabels")
+      place_with_def = addDefault place cur_labels
+
+  in M.continue $ startMultiDialogIO
+                    txtLabels
+                    (return . checkLabels)
+                    (pureRestrict txtLabels)
+                    place_with_def
+                    ls tl l
+  where
+    txtLabels :: Labels -> T.Text
+    txtLabels (Labels ls) = T.intercalate ", " (S.toList ls)
+
+    ls = mkLabel . view (field @"lrName")
+          <$> view (field @"labels") l
+
+    checkLabels :: NonEmpty T.Text -> Maybe Labels
+    checkLabels t = foldMap checkLabel t
+
+    checkLabel :: T.Text -> Maybe Labels
+    checkLabel t = checkLabelInput t
 
 startWeightInput :: IssuePageContents
                 -> OperationalState
@@ -302,30 +319,6 @@ startWeightInput tl l =
   in M.continue (set typed
                  (FooterInput dispatcher
                  (fromMaybe emptyTextCursor $ makeTextCursor weight_t)) l)
-
-milestoneAutocomplete :: [MilestoneResp]
-                      -> Maybe T.Text
-                      -> MilestoneAutocomplete
-milestoneAutocomplete ms ini =
-  mkAutocomplete
-    ms
-    (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (view (field @"mrTitle") v))) s)
-    (view (field @"mrTitle"))
-    ini
-    (Dialog (MilestoneName False))
-    (Dialog (MilestoneName True))
-
-ownerAutocomplete :: [User]
-                      -> Maybe T.Text
-                      -> OwnerAutocomplete
-ownerAutocomplete us ini =
-  mkAutocomplete
-    us
-    (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (view (field @"userUsername") v))) s)
-    (view (field @"userUsername"))
-    ini
-    (Dialog (OwnerName False))
-    (Dialog (OwnerName True))
 
 
 startMilestoneInput :: IssuePageContents
