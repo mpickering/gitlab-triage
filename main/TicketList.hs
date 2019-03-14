@@ -15,6 +15,8 @@ import GitLab.Tickets
 import GitLab.Users
 import GitLab.Common
 
+import Data.List.NonEmpty (NonEmpty(..))
+
 import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
@@ -87,12 +89,16 @@ startScopeDialog =
         _ -> Nothing
 
 startLabelDialog tl l =
-  startDialog txtLabelParam checkLabel (field @"params" . field @"gipLabels")
+  startMultiDialogIO txtLabelParam (return . checkLabels) (pureRestrict txtLabelParam) (field @"params" . field @"gipLabels")
               ([NoLabels, AnyLabel] ++ ls) tl l
   where
     ls = WithLabels . mkLabel . view (field @"lrName")
           <$> view (field @"labels") l
 
+    checkLabels :: NonEmpty T.Text -> Maybe LabelParam
+    checkLabels t = foldMap checkLabel t
+
+    checkLabel :: T.Text -> Maybe LabelParam
     checkLabel t =
       case (T.toLower t) of
         "none" -> Just NoLabels
@@ -160,21 +166,21 @@ startSearchDialog tl l =
     checkSearch :: T.Text -> Maybe T.Text
     checkSearch t = Just t
 
---TODO: Unify with startDialog
-startDialogIO :: (a -> T.Text)
-            -> (T.Text -> IO (Maybe a))
+startDialogX :: Bool
+            -> (a -> T.Text)
+            -> (NonEmpty T.Text -> IO (Maybe a))
             -> (T.Text -> [a] -> IO [a])
             -> ALens TicketList TicketList (Maybe a) (Maybe a)
             -> [a]
             -> TicketList
             -> OperationalState
             -> OperationalState
-startDialogIO draw check restrict place ini tl l =
+startDialogX multi draw check restrict place ini tl l =
   let ini_state = view (cloneLens place) tl
       state_t = draw <$> ini_state
 
       ac =
-        mkAutocompleteIO
+        mkMultiAutocompleteIO multi
           ini
           restrict
           draw
@@ -185,6 +191,29 @@ startDialogIO draw check restrict place ini tl l =
 
   in set typed (SearchParamsDialog check place ac) l
 
+startDialogIO :: (a -> T.Text)
+            -> (T.Text -> IO (Maybe a))
+            -> (T.Text -> [a] -> IO [a])
+            -> ALens TicketList TicketList (Maybe a) (Maybe a)
+            -> [a]
+            -> TicketList
+            -> OperationalState
+            -> OperationalState
+startDialogIO draw check = startDialogX False draw (\(a :| _) -> check a)
+
+startMultiDialogIO :: (a -> T.Text)
+            -> (NonEmpty T.Text -> IO (Maybe a))
+            -> (T.Text -> [a] -> IO [a])
+            -> ALens TicketList TicketList (Maybe a) (Maybe a)
+            -> [a]
+            -> TicketList
+            -> OperationalState
+            -> OperationalState
+startMultiDialogIO = startDialogX True
+
+pureRestrict :: Monad m => (a -> T.Text) -> T.Text -> [a] -> m [a]
+pureRestrict draw t s =
+  return $ filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s
 
 startDialog :: (a -> T.Text)
             -> (T.Text -> Maybe a)
@@ -193,20 +222,8 @@ startDialog :: (a -> T.Text)
             -> TicketList
             -> OperationalState
             -> OperationalState
-startDialog draw check place ini tl l =
-  let ini_state = view (cloneLens place) tl
-      state_t = draw <$> ini_state
-
-      ac =
-        mkAutocomplete
-          ini
-          (\t s -> filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s)
-          draw
-          state_t
-          (Dialog (MilestoneName False))
-          (Dialog (MilestoneName True))
-
-  in set typed (SearchParamsDialog (return . check) place ac) l
+startDialog draw check =
+  startDialogIO draw (return . check) (pureRestrict draw)
 
 startStateDialog :: TicketList -> OperationalState -> OperationalState
 startStateDialog =

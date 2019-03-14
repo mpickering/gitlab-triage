@@ -192,6 +192,14 @@ instance ToHttpApiData StateParam where
 data LabelParam = WithLabels Labels | NoLabels | AnyLabel
   deriving (Generic, Show)
 
+instance Semigroup LabelParam where
+  NoLabels <> _ = NoLabels
+  AnyLabel <> _ = AnyLabel
+  _ <> NoLabels = NoLabels
+  _ <> AnyLabel = AnyLabel
+  WithLabels xs <> WithLabels ys = WithLabels (xs <> ys)
+
+
 instance ToHttpApiData LabelParam where
     toQueryParam (WithLabels ls) = toQueryParam ls
     toQueryParam NoLabels = "None"
@@ -696,6 +704,7 @@ subscribeIssue tok sudo prj iid = do
 type GetLabels =
   GitLabRoot :> "projects"
   :> Capture "id" ProjectId :> "labels"
+  :> QueryParam "per_page" Int
   :> Get '[JSON] [LabelResp]
 
 data LabelResp = LabelResp { lrName :: Text
@@ -707,7 +716,7 @@ instance FromJSON LabelResp where
 
 getLabels :: AccessToken -> ProjectId -> ClientM [LabelResp]
 getLabels tok prj
-  = client (Proxy :: Proxy GetLabels) (Just tok) prj
+  = client (Proxy :: Proxy GetLabels) (Just tok) prj (Just 500)
 
 
 

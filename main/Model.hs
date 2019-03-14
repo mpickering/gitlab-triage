@@ -16,6 +16,7 @@ import Servant.Client
 import Autocomplete
 import Control.Lens (ALens)
 import Data.Text (Text)
+import Data.List.NonEmpty
 
 import qualified IOList
 import Cache
@@ -89,7 +90,7 @@ data DialogMode where
     (ALens IssuePageContents IssuePageContents (Maybe a) (Maybe a)) ->
     (AppAutocomplete a) -> DialogMode
   SearchParamsDialog ::
-    (Text -> IO (Maybe a)) ->
+    (NonEmpty Text -> IO (Maybe a)) ->
     (ALens TicketList TicketList (Maybe a) (Maybe a)) ->
     (AppAutocomplete a) ->
     DialogMode

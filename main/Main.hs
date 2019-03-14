@@ -39,6 +39,8 @@ import Control.Monad.IO.Class (liftIO)
 import Cursor.Text
 
 import Control.Applicative.Combinators ()
+import Data.List.NonEmpty
+import Data.Maybe
 
 import Config
 import Model
@@ -186,16 +188,18 @@ dispatchDialogInput (IssuePageDialog check place mac) l = do
       M.continue $ set (typed @Mode . _Ctor @"IssueView" . typed @IssuePageContents . cloneLens place)
                        (Just mid) (resetDialog l)
 dispatchDialogInput (SearchParamsDialog check place mac) l = do
-  if (T.null rbc)
+  if (T.null rbc && null other_items)
     then (update Nothing)
     else do
-      res <- liftIO $ check rbc
+      res <- liftIO $ check items
       case res of
         Nothing  -> M.continue (resetDialog l)
         Just mid -> update (Just mid)
   where
     tc = view (field @"autocompleteCursor") mac
     rbc = rebuildTextCursor tc
+    items = rbc :| other_items
+    other_items = fromMaybe [] (view (field @"autocompleteItems") mac)
     update v = do
       let new_state = set (typed @Mode . _Ctor @"TicketListView"
                        . cloneLens place) v (resetDialog l)
@@ -230,7 +234,7 @@ inputFooterHandler m tc k l re@(T.VtyEvent e) =
     V.EvKey V.KEnter [] -> dispatchFooterInput m tc l
     _ ->
       handleTextCursorEvent
-        (\tc' -> k (set typed (FooterInput m tc') l) re)
+        (\tc' -> M.continue (set typed (FooterInput m tc') l))
         tc re
 inputFooterHandler _ _ k l re = k l re
 
@@ -286,6 +290,7 @@ theMap _ = A.attrMap V.defAttr
     , ("default", V.defAttr )
     --, ("closed", V.withStyle V.currentAttr V.dim )
     , ("closed", V.white `on` V.red )
+    , ("selected", V.withStyle V.currentAttr V.italic )
     ]
 
 

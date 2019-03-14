@@ -21,7 +21,7 @@ import GitLab.Tickets
 
 checkLabelInput :: T.Text -> Maybe Labels
 checkLabelInput t =
-  Labels . S.fromList <$> parseMaybe @() (sepBy plabel (string ",")) t
+  Labels . S.singleton <$> parseMaybe @() plabel t
   where
 --    label :: ParsecT () T.Text Identity T.Text
     plabel = T.pack <$> (space *> (some (alphaNumChar <|> spaceChar)) <* space)

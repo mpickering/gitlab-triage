@@ -266,6 +266,11 @@ restrictAuthor ac t _ =
   defaultEither [] $ runQuery ac
                               (\tok _ -> getUsers Nothing (Just t) tok)
 
+restrictLabel :: AppConfig -> T.Text -> [LabelParam] -> IO [LabelParam]
+restrictLabel _ "" us = return us
+restrictLabel ac t us =  return us
+--  defaultEither [] $ runQuery ac (\tok _ -> getL
+
 ---
 
 
