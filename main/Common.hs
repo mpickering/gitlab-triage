@@ -11,7 +11,7 @@ import Servant.Client.Core.Internal.Request
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
-import Control.Lens ( to, firstOf )
+import Control.Lens ( to, firstOf, lens)
 
 import Control.Monad.Reader
 import qualified Brick.Main as M
@@ -40,6 +40,7 @@ import Control.Monad.Free
 import Control.Monad.Error.Class
 
 import Data.Hashable
+import Data.Maybe
 
 
 toClientM :: ClientM a -> H.ClientM a
@@ -290,4 +291,8 @@ formatFooterMode :: FooterInputMode -> T.Text
 formatFooterMode m = case m of
                        FGoto {}   -> "g: "
                        FGen h _ _ -> h <> ": "
+
+addDefault :: ALens s s (Maybe a) (Maybe a) -> a -> ALens s s (Maybe a) (Maybe a)
+addDefault l d =
+  lens (\s -> maybe (Just d) Just (view (cloneLens l) s)) (\s a -> set (cloneLens l) a s)
 

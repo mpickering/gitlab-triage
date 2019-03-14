@@ -50,6 +50,7 @@ import Common
 import TextCursor
 import Parsers
 import ExternalEditor
+import Dialog
 
 
 drawIssueView :: FooterMode -> IssuePage -> [Widget Name]
@@ -335,14 +336,15 @@ startMilestoneInput ip os =
       draw Nothing = ""
       draw (Just m) = view (field @"mrTitle") m
 
-      place :: ALens IssuePageContents IssuePageContents
-                                         (Maybe MilestoneResp)
-                                         (Maybe MilestoneResp)
-      place = typed @IssueResp . field @"irMilestone"
-  in startDialog (checkMilestoneInput milestones)
-                 draw
-                 (typed @Updates . typed @EditIssue . field @"eiMilestone")
-                 place
+      def = view (typed @IssueResp . field @"irMilestone") ip
+
+      place_with_def =
+        addDefault (typed @Updates . typed @EditIssue . field @"eiMilestone")
+                   def
+  in M.continue
+      $ startDialog draw
+                 (checkMilestoneInput milestones)
+                 place_with_def
                  (map Just milestones)
                  ip os
 
@@ -354,54 +356,16 @@ startOwnerInput ip os =
   let users = view (field @"users") os
       draw  = T.intercalate ", " . map (view (field @"userUsername"))
       ac = view (typed @AppConfig) os
-  in startDialogIO (fmap (fmap (:[])) . checkAuthor ac)
+      def = view (typed @IssueResp . field @"irAssignees") ip
+      place = (typed @Updates . typed @EditIssue . field @"eiAssignees")
+      place_with_def = addDefault place def
+  in M.continue $
+        startDialogIO draw
+                   (fmap (fmap (:[])) . checkAuthor ac)
                    (\t _ -> map (:[]) <$> restrictAuthor ac t users)
-                   draw
-                   (typed @Updates . typed @EditIssue . field @"eiAssignees")
-                   (typed @IssueResp . field @"irAssignees")
+                   place_with_def
                    (map (:[]) users)
                    ip os
-
-
-startDialog :: (T.Text -> (Maybe a))
-            -> (a -> T.Text)
-            -> (ALens IssuePageContents IssuePageContents (Maybe a) (Maybe a))
-            -> (ALens IssuePageContents IssuePageContents a a)
-            -> [a]
-            -> IssuePageContents
-            -> OperationalState
-            -> EventM Name (Next OperationalState)
-startDialog check draw =
-  startDialogIO (return . check)
-                (\t s -> return $ filter (\v -> T.toLower t
-                                                  `T.isInfixOf`
-                                                  (T.toLower (draw v))) s)
-                draw
-
-startDialogIO :: (T.Text -> IO (Maybe a))
-              -> (T.Text -> [a] -> IO [a])
-              -> (a -> T.Text)
-              -> (ALens IssuePageContents IssuePageContents (Maybe a) (Maybe a))
-              -> (ALens IssuePageContents IssuePageContents a a)
-              -> [a]
-              -> IssuePageContents
-              -> OperationalState
-              -> EventM Name (Next OperationalState)
-startDialogIO check restrict draw upd_place cur_place ini ip os =
-  let ini_state = view (cloneLens cur_place) ip
-      state_t = draw ini_state
-
-      ac =
-        mkAutocompleteIO
-          ini
-          restrict
-          draw
-          (Just state_t)
-          (Dialog (MilestoneName False))
-          (Dialog (MilestoneName True))
-
-      dispatcher = IssuePageDialog check upd_place ac
-  in M.continue (set typed dispatcher os)
 
 
 applyChanges :: IssuePage -> OperationalState -> EventM Name (Next OperationalState)

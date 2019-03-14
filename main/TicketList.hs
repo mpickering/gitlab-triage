@@ -45,6 +45,7 @@ import Model
 import Autocomplete
 import Common
 import Parsers
+import Dialog
 
 import TextCursor
 
@@ -165,65 +166,6 @@ startSearchDialog tl l =
   where
     checkSearch :: T.Text -> Maybe T.Text
     checkSearch t = Just t
-
-startDialogX :: Bool
-            -> (a -> T.Text)
-            -> (NonEmpty T.Text -> IO (Maybe a))
-            -> (T.Text -> [a] -> IO [a])
-            -> ALens TicketList TicketList (Maybe a) (Maybe a)
-            -> [a]
-            -> TicketList
-            -> OperationalState
-            -> OperationalState
-startDialogX multi draw check restrict place ini tl l =
-  let ini_state = view (cloneLens place) tl
-      state_t = draw <$> ini_state
-
-      ac =
-        mkMultiAutocompleteIO multi
-          ini
-          restrict
-          draw
-          state_t
-          (Dialog (MilestoneName False))
-          (Dialog (MilestoneName True))
-
-
-  in set typed (SearchParamsDialog check place ac) l
-
-startDialogIO :: (a -> T.Text)
-            -> (T.Text -> IO (Maybe a))
-            -> (T.Text -> [a] -> IO [a])
-            -> ALens TicketList TicketList (Maybe a) (Maybe a)
-            -> [a]
-            -> TicketList
-            -> OperationalState
-            -> OperationalState
-startDialogIO draw check = startDialogX False draw (\(a :| _) -> check a)
-
-startMultiDialogIO :: (a -> T.Text)
-            -> (NonEmpty T.Text -> IO (Maybe a))
-            -> (T.Text -> [a] -> IO [a])
-            -> ALens TicketList TicketList (Maybe a) (Maybe a)
-            -> [a]
-            -> TicketList
-            -> OperationalState
-            -> OperationalState
-startMultiDialogIO = startDialogX True
-
-pureRestrict :: Monad m => (a -> T.Text) -> T.Text -> [a] -> m [a]
-pureRestrict draw t s =
-  return $ filter (\v -> T.toLower t `T.isInfixOf` (T.toLower (draw v))) s
-
-startDialog :: (a -> T.Text)
-            -> (T.Text -> Maybe a)
-            -> ALens TicketList TicketList (Maybe a) (Maybe a)
-            -> [a]
-            -> TicketList
-            -> OperationalState
-            -> OperationalState
-startDialog draw check =
-  startDialogIO draw (return . check) (pureRestrict draw)
 
 startStateDialog :: TicketList -> OperationalState -> OperationalState
 startStateDialog =

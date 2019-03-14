@@ -181,7 +181,10 @@ dispatchDialogInput :: DialogMode
                     -> EventM Name (Next OperationalState)
 dispatchDialogInput (IssuePageDialog check place mac) l = do
   let tc = view (field @"autocompleteCursor") mac
-  res <- liftIO $ check (rebuildTextCursor tc)
+      rbc = rebuildTextCursor tc
+      other_items = fromMaybe [] (view (field @"autocompleteItems") mac)
+      items = rbc :| other_items
+  res <- liftIO $ check items
   case res of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
