@@ -17,7 +17,7 @@ module Autocomplete(mkAutocomplete
 import Brick hiding (continue, halt)
 
 import Control.Lens (set)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, maybeToList)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Types as T
@@ -66,21 +66,21 @@ mkAutocompleteIO :: [a]
                -> n
                -> Autocomplete [a] n a
 mkAutocompleteIO as restrict draw ini
-  = mkMultiAutocompleteIO False as restrict draw (fmap (\a -> (a :| [])) ini)
+  = mkMultiAutocompleteIO False as restrict draw (maybeToList  ini)
 
 mkMultiAutocompleteIO ::
                Bool
                -> [a]
                -> (Text -> [a] -> IO [a])
                -> (a -> Text)
-               -> Maybe (NonEmpty Text)
+               -> [Text]
                -> n
                -> n
                -> Autocomplete [a] n a
 mkMultiAutocompleteIO multi s m tt ini ns1 ns2 =
   let (main_field, other_fields) = case ini of
-                     Nothing -> (Nothing, if multi then (Just []) else Nothing)
-                     Just (a :| as) -> (Just a, Just as)
+                     [] -> (Nothing, if multi then (Just []) else Nothing)
+                     (x:xs) -> (Just x, Just xs)
   in   Autocomplete s
                                 m
                                 tt

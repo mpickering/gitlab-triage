@@ -16,6 +16,8 @@ import GitLab.Users
 import GitLab.Common
 
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Maybe
+import Data.Semigroup ( sconcat )
 
 import qualified Data.Text as T
 
@@ -93,24 +95,28 @@ startScopeDialog =
 data LabelOption = NoneOption | AnyOption | LabelOption T.Text
 
 startLabelDialog tl l =
-  startMultiDialogIO txtLabelOption (return . checkLabel) (pureRestrict txtLabelOption) (field @"params" . field @"gipLabels" . paramIso)
-              ([NoneOption, AnyOption] ++ ls) tl l
+  startMultiDialogIO txtLabelOption
+                     (return . checkLabel)
+                     (pureRestrict txtLabelOption)
+                     (field @"params" . field @"gipLabels" . paramIso)
+                     (view (field @"params" . field @"gipLabels" . paramIso) tl)
+                     ([NoneOption, AnyOption] ++ ls) tl l
   where
-    toOptions :: LabelParam -> Maybe (NonEmpty LabelOption)
-    toOptions NoLabels = (Just (NoneOption :| []))
-    toOptions AnyLabel = (Just (AnyOption :| []))
-    toOptions (WithLabels (Labels ls)) = case S.toList ls of
-                                  [] -> Nothing
-                                  (x:xs) -> Just (LabelOption x :| map LabelOption xs)
+    toOptions :: LabelParam -> [LabelOption]
+    toOptions NoLabels = [NoneOption]
+    toOptions AnyLabel = [AnyOption]
+    toOptions (WithLabels (Labels ls)) = map LabelOption (S.toList ls)
 
     fromOptions :: LabelOption -> LabelParam
     fromOptions NoneOption = NoLabels
     fromOptions AnyOption  = AnyLabel
     fromOptions (LabelOption t) = WithLabels (mkLabel t)
 
-    paramIso :: Iso (Maybe LabelParam) (Maybe LabelParam) (Maybe (NonEmpty LabelOption))
-                                                          (Maybe (NonEmpty LabelOption))
-    paramIso = iso (\m -> m >>= toOptions) (\m -> fmap (foldMap1 fromOptions) m)
+    paramIso :: Iso (Maybe LabelParam) (Maybe LabelParam) [LabelOption]
+                                                          [LabelOption]
+    paramIso = iso (maybe [] toOptions) (\os -> case os of
+                                                 [] -> Nothing
+                                                 (x:xs) -> Just (foldMap1 fromOptions (x :| xs)))
 
     ls = LabelOption . view (field @"lrName")
           <$> view (field @"labels") l

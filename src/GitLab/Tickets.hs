@@ -393,8 +393,8 @@ type EditIssueAPI =
     :> Put '[JSON] IssueResp
 
 nullEditIssue :: EditIssue -> Bool
-nullEditIssue (EditIssue a b c _ e _ g h i) =
-    isNothing a && isNothing b && isNothing c &&
+nullEditIssue (EditIssue a b c d e _ g h i) =
+    isNothing a && isNothing b && isNothing c && isNothing d &&
     isNothing e && isNothing g && isNothing h &&
     isNothing i
     -- N.B. Ignore update time and labels

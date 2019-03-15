@@ -14,7 +14,7 @@ import Cursor.Text
 import GHC.Generics
 import Servant.Client
 import Autocomplete
-import Control.Lens (ALens)
+import Control.Lens (ALens, ASetter)
 import Data.Text (Text)
 import Data.List.NonEmpty
 
@@ -87,11 +87,11 @@ data DialogMode where
   NoDialog :: DialogMode
   IssuePageDialog ::
     (Text -> IO (Maybe a)) ->
-    (ALens IssuePageContents IssuePageContents (Maybe (NonEmpty a)) (Maybe (NonEmpty a))) ->
+    (ASetter IssuePageContents  IssuePageContents [a] [a]) ->
     (AppAutocomplete a) -> DialogMode
   SearchParamsDialog ::
     (Text -> IO (Maybe a)) ->
-    (ALens TicketList TicketList (Maybe (NonEmpty a)) (Maybe (NonEmpty a))) ->
+    (ASetter TicketList TicketList [a] [a]) ->
     (AppAutocomplete a) ->
     DialogMode
 

@@ -16,6 +16,7 @@ import GitLab.Users
 import GitLab.Common
 
 import Data.List.NonEmpty (NonEmpty(..))
+import Data.Maybe
 
 import qualified Data.Text as T
 
@@ -53,7 +54,7 @@ import Debug.Trace
 class SelectDialog s where
     selectDialog ::
       (T.Text -> IO (Maybe a)) ->
-      (ALens s s (Maybe (NonEmpty a)) (Maybe (NonEmpty a))) ->
+      (ASetter s s [a] [a]) ->
       (AppAutocomplete a) -> DialogMode
 
 instance SelectDialog TicketList where
@@ -68,14 +69,15 @@ startDialogX :: forall s a . SelectDialog s
             -> (a -> T.Text)
             -> (T.Text -> IO (Maybe a))
             -> (T.Text -> [a] -> IO [a])
-            -> ALens s s (Maybe (NonEmpty a)) (Maybe (NonEmpty a))
+            -> ASetter s s [a] [a]
+            -> [a]
             -> [a]
             -> s
             -> OperationalState
             -> OperationalState
-startDialogX multi draw check restrict place ini tl l =
-  let ini_state = view (cloneLens place) tl
-      state_t = fmap draw <$> ini_state
+startDialogX multi draw check restrict place ini_ac ini tl l =
+  let ini_state = ini_ac
+      state_t = fmap draw ini_state
 
       ac =
         mkMultiAutocompleteIO multi
@@ -98,17 +100,22 @@ startDialogIO :: SelectDialog s
             -> s
             -> OperationalState
             -> OperationalState
-startDialogIO draw check restrict place = startDialogX False draw check restrict
+startDialogIO draw check restrict place ini s =
+                               startDialogX False draw check restrict
                                             (cloneLens place . unsafeIso)
+                                            (view (cloneLens place . unsafeIso) s)
+                                            ini
+                                            s
   where
-    unsafeIso :: Iso (Maybe a) (Maybe a) (Maybe (NonEmpty a)) (Maybe (NonEmpty a))
-    unsafeIso = iso (fmap (\a -> (a :| []))) (fmap (\(a :| _) -> a))
+    unsafeIso :: Iso (Maybe a) (Maybe a) [a] [a]
+    unsafeIso = iso maybeToList listToMaybe
 
 startMultiDialogIO :: SelectDialog s
             => (a -> T.Text)
             -> (T.Text -> IO (Maybe a))
             -> (T.Text -> [a] -> IO [a])
-            -> ALens s s (Maybe (NonEmpty a)) (Maybe (NonEmpty a))
+            -> ASetter s s [a] [a]
+            -> [a]
             -> [a]
             -> s
             -> OperationalState

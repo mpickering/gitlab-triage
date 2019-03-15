@@ -284,7 +284,8 @@ startLabelInput :: IssuePageContents
 startLabelInput tl l =
   let labels_ini = view (typed @IssueResp . field @"irLabels") tl
       labels_mod = view (typed @Updates . typed @EditIssue . field @"eiLabels") tl
-      cur_labels = fromMaybe labels_ini labels_mod
+      (Labels cur_labels) = fromMaybe labels_ini labels_mod
+      cur_labels_t = S.toList cur_labels
 
       place = (typed @Updates . typed @EditIssue . field @"eiLabels" . labelsIso)
 
@@ -293,22 +294,19 @@ startLabelInput tl l =
                     (return . checkLabel)
                     (pureRestrict txtLabels)
                     place
+                    cur_labels_t
                     ls tl l
   where
-    splitLabels :: Maybe Labels -> Maybe (NonEmpty T.Text)
-    splitLabels Nothing = Nothing
-    splitLabels (Just (Labels ss)) =
-      case S.toList ss of
-        [] -> Nothing
-        (x:xs) -> Just (x :| xs)
+    splitLabels :: Maybe Labels -> [T.Text]
+    splitLabels Nothing = []
+    splitLabels (Just (Labels ss)) = S.toList ss
 
-    joinLabels :: Maybe (NonEmpty T.Text) -> Maybe Labels
-    joinLabels Nothing = Nothing
-    joinLabels (Just xs) =
-      let xs' = N.filter (\t -> not (T.null (T.strip t))) xs
-      in Just (foldMap (Labels . S.singleton) xs')
+    joinLabels :: [T.Text] -> Labels
+    joinLabels xs =
+      let xs' = filter (\t -> not (T.null (T.strip t))) xs
+      in foldMap (Labels . S.singleton) xs'
 
-    labelsIso = iso splitLabels joinLabels
+    labelsIso = iso splitLabels (Just . joinLabels)
 
     txtLabels :: T.Text -> T.Text
     txtLabels = id

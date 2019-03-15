@@ -18,7 +18,7 @@ import qualified Data.Text as T
 import Brick hiding (continue, halt)
 import Brick.Forms
 
-import Control.Lens (view, set, cloneLens, Traversal', firstOf)
+import Control.Lens (view, set, cloneLens, Traversal', firstOf, cloneSetter)
 import Control.Monad (void)
 import qualified Graphics.Vty as V
 
@@ -175,7 +175,7 @@ handleDialogEvent dc l re  =
 
 
 mapMaybeM :: (a -> IO (Maybe b))
-          -> NonEmpty a -> IO (Maybe (NonEmpty b))
+          -> [a] -> IO (Maybe [b])
 mapMaybeM f xs = fmap sequence (traverse f xs)
 
 -- TODO: This duplication is a bit unsatisfactory and also the set is
@@ -187,29 +187,29 @@ dispatchDialogInput (IssuePageDialog check place mac) l = do
   let tc = view (field @"autocompleteCursor") mac
       rbc = rebuildTextCursor tc
       other_items = fromMaybe [] (view (field @"autocompleteItems") mac)
-      items = rbc :| other_items
+      items = rbc : other_items
   res <- liftIO $ mapMaybeM check items
   case res of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
-      M.continue $ set (typed @Mode . _Ctor @"IssueView" . typed @IssuePageContents . cloneLens place)
-                       (Just mid) (resetDialog l)
+      M.continue $ set (typed @Mode . _Ctor @"IssueView" . typed @IssuePageContents . cloneSetter place)
+                       (mid) (resetDialog l)
 dispatchDialogInput (SearchParamsDialog check place mac) l = do
   if (T.null rbc && null other_items)
-    then (update Nothing)
+    then (update [])
     else do
       res <- liftIO $ mapMaybeM check items
       case res of
         Nothing  -> M.continue (resetDialog l)
-        Just mid -> update (Just mid)
+        Just mid -> update mid
   where
     tc = view (field @"autocompleteCursor") mac
     rbc = rebuildTextCursor tc
-    items = rbc :| other_items
+    items = rbc : other_items
     other_items = fromMaybe [] (view (field @"autocompleteItems") mac)
     update v = do
       let new_state = set (typed @Mode . _Ctor @"TicketListView"
-                       . cloneLens place) v (resetDialog l)
+                       . cloneSetter place) v (resetDialog l)
           search_params =
             case firstOf (typed @Mode . _Ctor @"TicketListView" . typed @GetIssuesParams)
                          new_state of
