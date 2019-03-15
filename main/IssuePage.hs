@@ -19,11 +19,12 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, set, ALens, cloneLens)
+import Control.Lens (view, set, ALens, cloneLens, iso)
 import Control.Monad (void)
 import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
 import Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as N
 
 import qualified Brick.Main as M
 import qualified Brick.Types as T
@@ -42,6 +43,7 @@ import Control.Applicative.Combinators ()
 import Control.Monad.Reader
 
 import qualified Data.Set as S
+import qualified Data.Foldable as F
 
 import Data.List
 
@@ -284,27 +286,38 @@ startLabelInput tl l =
       labels_mod = view (typed @Updates . typed @EditIssue . field @"eiLabels") tl
       cur_labels = fromMaybe labels_ini labels_mod
 
-      place = (typed @Updates . typed @EditIssue . field @"eiLabels")
-      place_with_def = addDefault place cur_labels
+      place = (typed @Updates . typed @EditIssue . field @"eiLabels" . labelsIso)
 
   in M.continue $ startMultiDialogIO
                     txtLabels
-                    (return . checkLabels)
+                    (return . checkLabel)
                     (pureRestrict txtLabels)
-                    place_with_def
+                    place
                     ls tl l
   where
-    txtLabels :: Labels -> T.Text
-    txtLabels (Labels ls) = T.intercalate ", " (S.toList ls)
+    splitLabels :: Maybe Labels -> Maybe (NonEmpty T.Text)
+    splitLabels Nothing = Nothing
+    splitLabels (Just (Labels ss)) =
+      case S.toList ss of
+        [] -> Nothing
+        (x:xs) -> Just (x :| xs)
 
-    ls = mkLabel . view (field @"lrName")
+    joinLabels :: Maybe (NonEmpty T.Text) -> Maybe Labels
+    joinLabels Nothing = Nothing
+    joinLabels (Just xs) =
+      let xs' = N.filter (\t -> not (T.null (T.strip t))) xs
+      in Just (foldMap (Labels . S.singleton) xs')
+
+    labelsIso = iso splitLabels joinLabels
+
+    txtLabels :: T.Text -> T.Text
+    txtLabels = id
+
+    ls = view (field @"lrName")
           <$> view (field @"labels") l
 
-    checkLabels :: NonEmpty T.Text -> Maybe Labels
-    checkLabels t = foldMap checkLabel t
-
-    checkLabel :: T.Text -> Maybe Labels
-    checkLabel t = checkLabelInput t
+    checkLabel :: T.Text -> Maybe T.Text
+    checkLabel = Just
 
 startWeightInput :: IssuePageContents
                 -> OperationalState

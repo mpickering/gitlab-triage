@@ -24,7 +24,7 @@ checkLabelInput t =
   Labels . S.singleton <$> parseMaybe @() plabel t
   where
 --    label :: ParsecT () T.Text Identity T.Text
-    plabel = T.pack <$> (space *> (some (alphaNumChar <|> spaceChar)) <* space)
+    plabel = T.pack <$> (space *> (some (alphaNumChar <|> spaceChar <|> punctuationChar )) <* space)
 
 checkGotoInput :: T.Text -> Maybe IssueIid
 checkGotoInput t = IssueIid <$> parseMaybe @() decimal t

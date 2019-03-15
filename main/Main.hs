@@ -174,6 +174,10 @@ handleDialogEvent dc l re  =
       M.continue (set (typed @DialogMode) (wrap mac') l)
 
 
+mapMaybeM :: (a -> IO (Maybe b))
+          -> NonEmpty a -> IO (Maybe (NonEmpty b))
+mapMaybeM f xs = fmap sequence (traverse f xs)
+
 -- TODO: This duplication is a bit unsatisfactory and also the set is
 -- partial because it relies on being in specific mode.
 dispatchDialogInput :: DialogMode
@@ -184,7 +188,7 @@ dispatchDialogInput (IssuePageDialog check place mac) l = do
       rbc = rebuildTextCursor tc
       other_items = fromMaybe [] (view (field @"autocompleteItems") mac)
       items = rbc :| other_items
-  res <- liftIO $ check items
+  res <- liftIO $ mapMaybeM check items
   case res of
     Nothing  -> M.continue (resetDialog l)
     Just mid -> do
@@ -194,7 +198,7 @@ dispatchDialogInput (SearchParamsDialog check place mac) l = do
   if (T.null rbc && null other_items)
     then (update Nothing)
     else do
-      res <- liftIO $ check items
+      res <- liftIO $ mapMaybeM check items
       case res of
         Nothing  -> M.continue (resetDialog l)
         Just mid -> update (Just mid)

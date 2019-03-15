@@ -21,7 +21,7 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, ALens,  to, set, cloneLens)
+import Control.Lens
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -52,8 +52,8 @@ import Debug.Trace
 
 class SelectDialog s where
     selectDialog ::
-      (NonEmpty T.Text -> IO (Maybe a)) ->
-      (ALens s s (Maybe a) (Maybe a)) ->
+      (T.Text -> IO (Maybe a)) ->
+      (ALens s s (Maybe (NonEmpty a)) (Maybe (NonEmpty a))) ->
       (AppAutocomplete a) -> DialogMode
 
 instance SelectDialog TicketList where
@@ -66,16 +66,16 @@ instance SelectDialog IssuePageContents where
 startDialogX :: forall s a . SelectDialog s
             => Bool
             -> (a -> T.Text)
-            -> (NonEmpty T.Text -> IO (Maybe a))
+            -> (T.Text -> IO (Maybe a))
             -> (T.Text -> [a] -> IO [a])
-            -> ALens s s (Maybe a) (Maybe a)
+            -> ALens s s (Maybe (NonEmpty a)) (Maybe (NonEmpty a))
             -> [a]
             -> s
             -> OperationalState
             -> OperationalState
 startDialogX multi draw check restrict place ini tl l =
   let ini_state = view (cloneLens place) tl
-      state_t = draw <$> ini_state
+      state_t = fmap draw <$> ini_state
 
       ac =
         mkMultiAutocompleteIO multi
@@ -98,13 +98,17 @@ startDialogIO :: SelectDialog s
             -> s
             -> OperationalState
             -> OperationalState
-startDialogIO draw check = startDialogX False draw (\(a :| _) -> check a)
+startDialogIO draw check restrict place = startDialogX False draw check restrict
+                                            (cloneLens place . unsafeIso)
+  where
+    unsafeIso :: Iso (Maybe a) (Maybe a) (Maybe (NonEmpty a)) (Maybe (NonEmpty a))
+    unsafeIso = iso (fmap (\a -> (a :| []))) (fmap (\(a :| _) -> a))
 
 startMultiDialogIO :: SelectDialog s
             => (a -> T.Text)
-            -> (NonEmpty T.Text -> IO (Maybe a))
+            -> (T.Text -> IO (Maybe a))
             -> (T.Text -> [a] -> IO [a])
-            -> ALens s s (Maybe a) (Maybe a)
+            -> ALens s s (Maybe (NonEmpty a)) (Maybe (NonEmpty a))
             -> [a]
             -> s
             -> OperationalState

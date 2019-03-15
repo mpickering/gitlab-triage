@@ -21,7 +21,7 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, ALens,  to, set, cloneLens)
+import Control.Lens (view, ALens,  to, set, cloneLens, Iso, iso)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -46,6 +46,7 @@ import Autocomplete
 import Common
 import Parsers
 import Dialog
+import Data.Semigroup.Foldable
 
 import TextCursor
 
@@ -89,22 +90,37 @@ startScopeDialog =
         "assigned to me" -> Just AssignedToMe
         _ -> Nothing
 
+data LabelOption = NoneOption | AnyOption | LabelOption T.Text
+
 startLabelDialog tl l =
-  startMultiDialogIO txtLabelParam (return . checkLabels) (pureRestrict txtLabelParam) (field @"params" . field @"gipLabels")
-              ([NoLabels, AnyLabel] ++ ls) tl l
+  startMultiDialogIO txtLabelOption (return . checkLabel) (pureRestrict txtLabelOption) (field @"params" . field @"gipLabels" . paramIso)
+              ([NoneOption, AnyOption] ++ ls) tl l
   where
-    ls = WithLabels . mkLabel . view (field @"lrName")
+    toOptions :: LabelParam -> Maybe (NonEmpty LabelOption)
+    toOptions NoLabels = (Just (NoneOption :| []))
+    toOptions AnyLabel = (Just (AnyOption :| []))
+    toOptions (WithLabels (Labels ls)) = case S.toList ls of
+                                  [] -> Nothing
+                                  (x:xs) -> Just (LabelOption x :| map LabelOption xs)
+
+    fromOptions :: LabelOption -> LabelParam
+    fromOptions NoneOption = NoLabels
+    fromOptions AnyOption  = AnyLabel
+    fromOptions (LabelOption t) = WithLabels (mkLabel t)
+
+    paramIso :: Iso (Maybe LabelParam) (Maybe LabelParam) (Maybe (NonEmpty LabelOption))
+                                                          (Maybe (NonEmpty LabelOption))
+    paramIso = iso (\m -> m >>= toOptions) (\m -> fmap (foldMap1 fromOptions) m)
+
+    ls = LabelOption . view (field @"lrName")
           <$> view (field @"labels") l
 
-    checkLabels :: NonEmpty T.Text -> Maybe LabelParam
-    checkLabels t = foldMap checkLabel t
-
-    checkLabel :: T.Text -> Maybe LabelParam
+    checkLabel :: T.Text -> Maybe LabelOption
     checkLabel t =
       case (T.toLower t) of
-        "none" -> Just NoLabels
-        "any"  -> Just AnyLabel
-        _     -> WithLabels <$> checkLabelInput t
+        "none" -> Just NoneOption
+        "any"  -> Just AnyOption
+        t     ->  Just (LabelOption t)
 
 startMilestoneDialog tl l =
   startDialog txtMilestoneParam checkMilestone (field @"params" . field @"gipMilestone")
@@ -265,6 +281,13 @@ txtLabelParam l =
     WithLabels (Labels ts) -> T.intercalate ", " (S.toList ts)
     NoLabels -> "None"
     AnyLabel -> "Any"
+
+txtLabelOption l =
+  case l of
+    LabelOption t -> t
+    NoneOption -> "None"
+    AnyOption -> "Any"
+
 
 drawLabelParam :: LabelParam -> Widget n
 drawLabelParam = txt . txtLabelParam

@@ -33,6 +33,7 @@ import Data.Generics.Product
 import Data.Generics.Sum
 import GHC.Generics
 import Control.Lens
+import Data.List.NonEmpty (NonEmpty(..))
 
 import Control.Monad.IO.Class (liftIO)
 
@@ -64,24 +65,30 @@ mkAutocompleteIO :: [a]
                -> n
                -> n
                -> Autocomplete [a] n a
-mkAutocompleteIO = mkMultiAutocompleteIO False
+mkAutocompleteIO as restrict draw ini
+  = mkMultiAutocompleteIO False as restrict draw (fmap (\a -> (a :| [])) ini)
 
 mkMultiAutocompleteIO ::
                Bool
                -> [a]
                -> (Text -> [a] -> IO [a])
                -> (a -> Text)
-               -> Maybe Text
+               -> Maybe (NonEmpty Text)
                -> n
                -> n
                -> Autocomplete [a] n a
-mkMultiAutocompleteIO multi s m tt ini ns1 ns2 = Autocomplete s
+mkMultiAutocompleteIO multi s m tt ini ns1 ns2 =
+  let (main_field, other_fields) = case ini of
+                     Nothing -> (Nothing, if multi then (Just []) else Nothing)
+                     Just (a :| as) -> (Just a, Just as)
+  in   Autocomplete s
                                 m
                                 tt
-                                (fromMaybe emptyTextCursor $ (ini >>= makeTextCursor))
+                                (fromMaybe emptyTextCursor $ (main_field >>= makeTextCursor))
                                 ns1
                                 (L.list ns2 (Vec.fromList s) 1)
-                                (if multi then Just [] else Nothing)
+                                other_fields
+
 
 
 
