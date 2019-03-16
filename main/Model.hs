@@ -94,6 +94,8 @@ data DialogMode where
     (ASetter TicketList TicketList [a] [a]) ->
     (AppAutocomplete a) ->
     DialogMode
+  InfoDialog :: Text -> DialogMode
+    -- Display some generic information in a dialog
 
 
 data AppConfig = AppConfig {

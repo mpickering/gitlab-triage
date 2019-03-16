@@ -168,9 +168,9 @@ footer kn m = vLimit 1 $
  case m of
    FooterMessage t -> txt t
    FooterInfo ->
-    (txt "r - reload; g - goto; c - comment; d - description; F10 - commit changes")
+    (txt "r - reload; g - goto; c - comment; d - description; v - view comment; F10 - commit changes")
     <+>
-    (maybe emptyWidget (\(k, n) -> padLeft Max (int (k + 1) <+> txt "/" <+> int n)) kn)
+    (maybe emptyWidget (\(k, n) -> padLeft Max (int (k + 1) <+> txt "/" <+> int n <+> txt "(p/n)")) kn)
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 
@@ -272,11 +272,25 @@ issuePageHandler i@(IssuePage tl ip) l e =
     (T.VtyEvent (V.EvKey (V.KChar 'w') []))  -> startWeightInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'n') []))  -> ticketListEvent IOList.listMoveDown i l
     (T.VtyEvent (V.EvKey (V.KChar 'p') []))  -> ticketListEvent IOList.listMoveUp i l
+    (T.VtyEvent (V.EvKey (V.KChar 'v') []))  -> viewComment ip l
 
     (T.VtyEvent (V.EvKey (V.KFun 10) [])) -> applyChanges (IssuePage tl ip) l
     _ ->
       liftHandler typed ip (IssueView . IssuePage tl)
         (demote (view typed l) internalIssuePageHandler) l e
+
+viewComment :: IssuePageContents
+            -> OperationalState
+            -> EventM Name (Next OperationalState)
+viewComment ip o =
+  let notes = view (field @"issueNotes") ip
+      el    = L.listSelectedElement notes
+  in case el of
+       Nothing -> M.continue o
+       Just (k, note) ->
+
+        let info = view (field @"inrBody") note
+        in M.continue (set typed (InfoDialog info) o)
 
 ticketListEvent :: (IOList.IOListWidget Name IssueResp -> IO (IOList.IOListWidget Name IssueResp))
                   -> IssuePage -> OperationalState

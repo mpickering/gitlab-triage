@@ -106,14 +106,18 @@ drawDialog :: DialogMode -> Widget Name
 drawDialog NoDialog = emptyWidget
 drawDialog (IssuePageDialog _ _ ac) = drawAutocompleteDialog ac
 drawDialog (SearchParamsDialog _ _ ac) = drawAutocompleteDialog ac
+drawDialog (InfoDialog t) = drawInfoDialog t
+
+dialogBox :: Widget n -> Widget n
+dialogBox dialog =
+  C.centerLayer . joinBorders
+    . B.border . hLimitPercent 75 . vLimitPercent 75 $ dialog
 
 drawAutocompleteDialog :: (Ord n, Show n) => Autocomplete s n a -> Widget n
-drawAutocompleteDialog ac = dBox
-  where
-    dBox = C.centerLayer . joinBorders
-            . B.border . hLimitPercent 75 . vLimitPercent 75 $ dialog
+drawAutocompleteDialog ac = dialogBox (drawAutocomplete ac)
 
-    dialog = drawAutocomplete ac
+drawInfoDialog :: (Ord n, Show n) => T.Text -> Widget n
+drawInfoDialog t = dialogBox (txtWrap t)
 
 
 
