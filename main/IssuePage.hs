@@ -426,7 +426,10 @@ applyChanges (IssuePage tl ip) o = do
           liftIO $ clearCache cache
         -- Could save one request here if we use the response from editIssue
           loadByIid iid ac)
-          (\v -> invalidateCache >> M.continue (set typed (IssueView (IssuePage tl v)) o)) o
+          (\(ir, v) -> do
+              invalidateCache
+              tl' <- (\r -> set (field @"issues") r tl) <$> liftIO (IOList.listReplaceCursor ir (view (field @"issues") tl))
+              M.continue (set typed (IssueView (IssuePage tl' v)) o)) o
 
 demote :: AppConfig -> HandlerR a -> Handler a
 demote ac h a e = runReaderT (h a e) ac

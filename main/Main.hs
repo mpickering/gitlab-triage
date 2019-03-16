@@ -171,6 +171,7 @@ handleDialogEvent dc l re  =
   case dc of
     IssuePageDialog a1 a2 mac     -> do_one mac (\mac' -> IssuePageDialog a1 a2 mac')
     SearchParamsDialog a1 a2 mac -> do_one mac (\mac' -> SearchParamsDialog a1 a2 mac')
+    InfoDialog {}                -> M.continue (resetDialog l)
     NoDialog            -> error "Handling dialog events when not in dialog mode"
   where
     do_one mac wrap = do
@@ -259,7 +260,9 @@ dispatchFooterInput (FGoto tl) tc l =
     Nothing -> M.continue (resetFooter l)
     Just iid -> do
       displayError (loadByIid iid (view typed l))
-                   (M.continue . resetFooter . issueView l . IssuePage tl)
+                   -- TODO: Maybe need to update tl here with the result of
+                   -- loadByIid
+                   (M.continue . resetFooter . issueView l . IssuePage tl . snd)
                    l
 dispatchFooterInput (FGen _ check place)  tc l =
   case check (rebuildTextCursor tc) of

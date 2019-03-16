@@ -186,10 +186,11 @@ issueView l n = set (field @"mode") (IssueView n) l
 {- Running external queries -}
 
 
-loadByIid :: IssueIid -> AppConfig -> ExceptT ServantError IO (IssuePageContents)
+loadByIid :: IssueIid -> AppConfig -> ExceptT ServantError IO (IssueResp, IssuePageContents)
 loadByIid iid ac = do
   r <- runQuery ac (getOneIssue iid)
-  loadByIssueResp r ac
+  ipc <- loadByIssueResp r ac
+  return (r, ipc)
 
 loadByIssueResp :: IssueResp -> AppConfig -> ExceptT ServantError IO (IssuePageContents)
 loadByIssueResp t l = do
@@ -272,6 +273,7 @@ restrictLabel :: AppConfig -> T.Text -> [LabelParam] -> IO [LabelParam]
 restrictLabel _ "" us = return us
 restrictLabel ac t us =  return us
 --  defaultEither [] $ runQuery ac (\tok _ -> getL
+
 
 ---
 

@@ -31,6 +31,7 @@ module IOList(IOListWidget(..), handleListEvent
               listInsert,
               listMoveUp,
               listMoveDown,
+              listReplaceCursor,
               curAndLen,
 
 
@@ -98,6 +99,15 @@ nil = IOList 0 ILNil
 
 cons :: e -> IOList e -> IOList e
 cons v (IOList n l) = IOList (n + 1) (ILCons v (IOList n l))
+
+tail :: IOList e -> IO (IOList e)
+tail t = do
+  r <- uncons t
+  case r of
+    Just (_, v) -> return v
+    Nothing -> return nil
+
+
 
 data IOListL e where
   ILNil :: IOListL e
@@ -356,6 +366,24 @@ drawListElements foc l drawElem =
         render $ viewport (l^.listNameL) Vertical $
                  translateBy (Location (0, off)) $
                  vBox $ drawnElements
+
+listReplaceCursor ::
+           e
+           -- ^ The element to insert
+           -> IOListWidget n e
+           -> IO (IOListWidget n e)
+listReplaceCursor e l | Just pos <- view listSelectedL l = do
+    let es = l^.listElementsL
+        newSel = case l^.listSelectedL of
+            Nothing -> 0
+            Just s -> if pos <= s
+                      then s + 1
+                      else s
+    (front, back) <- splitAt pos es
+    back' <- IOList.tail back
+    let new = concatILPure front (cons e back')
+    return $ l & listElementsL .~ new
+listReplaceCursor _ l = return l
 
 -- | Insert an item into a list at the specified position.
 --
