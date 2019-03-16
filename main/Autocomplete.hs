@@ -127,6 +127,9 @@ handleAutocompleteEvent ac (VtyEvent e) = do
   case e of
     V.EvKey key _mods ->
       case key of
+        V.KBS ->  if textCursorNull (autocompleteCursor ac)
+                    then return $ over (field @"autocompleteItems") (fmap safeInit) ac
+                    else handleListAndCursorEvent ac (VtyEvent e)
         V.KChar ',' -> liftIO $ updateAutocompleteItems (saveSelection ac)
         V.KChar '\t' ->
           case L.listSelectedElement (autocompleteList ac) of
@@ -136,6 +139,10 @@ handleAutocompleteEvent ac (VtyEvent e) = do
                            (newCursor (autocompleteToText ac a)) ac
         _ -> handleListAndCursorEvent ac (VtyEvent e)
 handleAutocompleteEvent ac _ = return ac
+
+safeInit :: [a] -> [a]
+safeInit [] = []
+safeInit xs = init xs
 
 
 handleListAndCursorEvent
