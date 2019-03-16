@@ -228,17 +228,18 @@ editDescriptionHandler ip = do
   let desc = view (typed @IssueResp . field @"irDescription") ip
       mod_desc = view (typed @Updates . typed @EditIssue . field @"eiDescription") ip
       init_desc = fromMaybe desc mod_desc
-  lift $ invokeExternalEditor (Just init_desc) (postCommentAndUpdate ip)
+  lift $ invokeExternalEditor (Just init_desc) (postCommentAndUpdate init_desc)
   where
-    postCommentAndUpdate :: IssuePageContents -> Maybe T.Text -> IO IssuePageContents
-    postCommentAndUpdate ip' t =
+    setDesc d = set (field @"updates" . typed @EditIssue . field @"eiDescription") d ip
+
+    postCommentAndUpdate :: T.Text -> Maybe T.Text -> IO IssuePageContents
+    postCommentAndUpdate old_desc t =
       case t of
-        Nothing -> return ip'
-        Just "" -> return ip'
-        Just descText  -> do
-          return $
-            (set (field @"updates" . typed @EditIssue . field @"eiDescription")
-              (Just descText) ip)
+        Nothing -> return ip
+        Just "" -> return ip
+        Just descText | T.strip old_desc == T.strip descText -> return ip
+        Just descText -> do
+          return $ setDesc (Just descText)
 
 newCommentHandler :: IssuePageContents -> ReaderT AppConfig (EventM Name) (Next IssuePageContents)
 newCommentHandler ip = do
