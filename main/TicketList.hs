@@ -248,8 +248,8 @@ drawTicketRow :: Bool -> IssueResp -> Widget n
 drawTicketRow _ IssueResp{..} =
     withAttr state_attr $ vLimit 1 $ hBox
         [ hLimit 6 $ padRight Max $ int (unIssueIid irIid)
-        , padRight Max $ txt irTitle
-        , padLeft (Pad 1) $ txt irState]
+        , padRight Max $ txt irTitle ]
+--        , padLeft (Pad 1) $ txt irState]
   where
     state_attr = attrName (T.unpack irState)
 

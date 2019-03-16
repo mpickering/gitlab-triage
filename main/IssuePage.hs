@@ -180,7 +180,8 @@ drawAuthor  = txt . view (field @"userName")
 
 drawNote :: Bool -> IssueNoteResp -> Widget Name
 drawNote sel i = cached (Note (sel, view (field @"inrId") i)) $
-      vLimit 6 $ ignoreSel B.hBorder <=>
+      vLimit 6 $
+        ignoreSel B.hBorder <=>
                   (hBox [ noteMeta
                         , B.vBorder
                         , txtWrap (view (field @"inrBody") i)])
