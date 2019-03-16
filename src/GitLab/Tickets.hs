@@ -704,8 +704,13 @@ subscribeIssue tok sudo prj iid = do
 type GetLabels =
   GitLabRoot :> "projects"
   :> Capture "id" ProjectId :> "labels"
+  :> QueryParam "page" Int
   :> QueryParam "per_page" Int
-  :> Get '[JSON] [LabelResp]
+  :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int
+                            , Header "X-Total" Int
+                            , Header "X-Page" Int
+                            , Header "X-Next-Page" Int
+                            , Header "X-Per-Page" Int] [LabelResp]))
 
 data LabelResp = LabelResp { lrName :: Text
                            } deriving Generic
@@ -716,7 +721,25 @@ instance FromJSON LabelResp where
 
 getLabels :: AccessToken -> ProjectId -> ClientM [LabelResp]
 getLabels tok prj
-  = client (Proxy :: Proxy GetLabels) (Just tok) prj (Just 500)
+  = do
+  let q n = client (Proxy :: Proxy GetLabels) (Just tok) prj (Just n) (Just 100)
+  res <- q 1
+  let hs = getHeaders res
+
+      read_header_m s =
+        let p = fromMaybe "1" $ lookup s hs
+        in readMaybe (B.unpack p) :: Maybe Int
+
+      read_header s =
+        case read_header_m s of
+              Just r -> r
+              Nothing -> error (show s)
+      loop lim n | lim < n = return []
+      loop lim n = (++) <$> (getResponse <$> q n) <*> loop lim (n + 1)
+
+
+  res2 <- loop 2 (read_header "X-Total-Pages")
+  return (getResponse res ++ res2)
 
 
 
