@@ -20,7 +20,7 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, set, ALens, cloneLens, iso)
+import Control.Lens (view, set, ALens, cloneLens, iso, to)
 import Control.Monad (void)
 import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
@@ -55,6 +55,8 @@ import TextCursor
 import Parsers
 import ExternalEditor
 import Dialog
+import qualified IOList
+import TicketList
 
 
 drawIssueView :: FooterMode -> IssuePage -> [Widget Name]
@@ -62,9 +64,9 @@ drawIssueView fm l = [drawIssuePage fm l]
 
 
 drawIssuePage :: FooterMode -> IssuePage -> Widget Name
-drawIssuePage fm (IssuePage _ l) =
+drawIssuePage fm (IssuePage tl l) =
   B.border (vBox [metainfo, desc, notesSect
-                 , updateLog, B.hBorder, footer fm])
+                 , updateLog, B.hBorder, footerSect ])
   where
     ir@IssueResp{..} = view typed l
     EditIssue{..} = view (typed @Updates . typed) l
@@ -108,6 +110,8 @@ drawIssuePage fm (IssuePage _ l) =
 
     notesSect =
       L.renderList drawNote True notes
+
+    footerSect =  footer (view (field @"issues" . to IOList.curAndLen) tl) fm
 
 changed :: (a -> Widget n) -> a -> Maybe a -> Widget n
 changed f v Nothing = f v
@@ -158,12 +162,14 @@ drawUpdates (Updates c EditIssue{..}) =
     changeRow name thing f =
       (\a -> hBox [txt name, txt " set to: ", f a]) <$> thing
 
-footer :: FooterMode -> Widget Name
-footer m = vLimit 1 $
+footer :: Maybe (Int, Int) -> FooterMode -> Widget Name
+footer kn m = vLimit 1 $
  case m of
    FooterMessage t -> txt t
    FooterInfo ->
-    txt "r - reload; g - goto; c - comment; d - description; F10 - commit changes"
+    (txt "r - reload; g - goto; c - comment; d - description; F10 - commit changes")
+    <+>
+    (maybe emptyWidget (\(k, n) -> padLeft Max (int (k + 1) <+> txt "/" <+> int n)) kn)
    FooterInput im t -> txt (formatFooterMode im) <+> drawTextCursor t
 
 
@@ -252,7 +258,7 @@ newCommentHandler ip = do
 
 -- | Events which change the mode
 issuePageHandler :: IssuePage -> Handler OperationalState
-issuePageHandler (IssuePage tl ip) l e =
+issuePageHandler i@(IssuePage tl ip) l e =
   case e of
     (T.VtyEvent (V.EvKey V.KEsc [])) -> do
       M.continue (set typed (TicketListView tl) l)
@@ -261,10 +267,23 @@ issuePageHandler (IssuePage tl ip) l e =
     (T.VtyEvent (V.EvKey (V.KChar 'm') []))  -> startMilestoneInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'o') []))  -> startOwnerInput ip l
     (T.VtyEvent (V.EvKey (V.KChar 'w') []))  -> startWeightInput ip l
+    (T.VtyEvent (V.EvKey (V.KChar 'n') []))  -> ticketListEvent IOList.listMoveDown i l
+    (T.VtyEvent (V.EvKey (V.KChar 'p') []))  -> ticketListEvent IOList.listMoveUp i l
+
     (T.VtyEvent (V.EvKey (V.KFun 10) [])) -> applyChanges (IssuePage tl ip) l
     _ ->
       liftHandler typed ip (IssueView . IssuePage tl)
         (demote (view typed l) internalIssuePageHandler) l e
+
+ticketListEvent :: (IOList.IOListWidget Name IssueResp -> IO (IOList.IOListWidget Name IssueResp))
+                  -> IssuePage -> OperationalState
+                                  -> EventM Name (Next OperationalState)
+ticketListEvent f (IssuePage tl ps) s =  do
+  let is = view (field @"issues") tl
+  is' <- liftIO $ f is
+  let tl' = set (field @"issues") is' tl
+  ticketListEnter tl' s
+
 
 startTitleInput :: IssuePageContents
                 -> OperationalState

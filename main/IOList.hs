@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RecordWildCards #-}
 -- | This module provides a scrollable list type like the one provided by
 -- the main library but with support for lazily loading list items. Even
 -- though the items are lazily loaded, we must still statically know the
@@ -28,6 +29,9 @@ module IOList(IOListWidget(..), handleListEvent
               listReplace,
               listRemove,
               listInsert,
+              listMoveUp,
+              listMoveDown,
+              curAndLen,
 
 
               -- Helpers
@@ -82,6 +86,9 @@ instance Functor IOListL where
   fmap _ ILNil = ILNil
   fmap f (ILCons x l) = ILCons (f x) (fmap f l)
   fmap f (ILLoad act) = ILLoad (fmap (fmap f) act)
+
+curAndLen :: IOListWidget n e -> Maybe (Int, Int)
+curAndLen (List{..}) = (,lengthIL listElements) <$> listSelected
 
 -- A list with delayed embedded IO actions but a statically known length.
 data IOList e = IOList Int (IOListL e)
