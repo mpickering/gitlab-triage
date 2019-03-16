@@ -20,6 +20,10 @@ type MCache k v = MVar (Cache k v)
 newCache :: Int -> IO (MCache k v)
 newCache timeout = newMVar (Cache timeout empty)
 
+clearCache :: MCache k v -> IO ()
+clearCache psq =
+  modifyMVar_ psq (\(Cache timeout _) -> return $ Cache timeout empty)
+
 lookupOrInsertCache :: (Ord k, Hashable k) => k
                                            -> IO v
                                            -> MCache k v

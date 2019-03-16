@@ -57,6 +57,7 @@ import ExternalEditor
 import Dialog
 import qualified IOList
 import TicketList
+import Cache
 
 
 drawIssueView :: FooterMode -> IssuePage -> [Widget Name]
@@ -400,11 +401,13 @@ applyChanges (IssuePage tl ip) o = do
   let iid = view (typed @IssueResp  . field @"irIid") ip
       (Updates c ei)  = view (typed @Updates) ip
       ac = view (typed @AppConfig) o
+      cache = view (field @"cache") ac
   displayError (do
           unless (nullEditIssue ei)
                  (void $ runQuery ac (\tok p -> editIssue tok Nothing p iid ei))
           forM_ c (\note ->
             runQuery ac (\tok p -> createIssueNote tok Nothing p iid note))
+          liftIO $ clearCache cache
         -- Could save one request here if we use the response from editIssue
           loadByIid iid ac)
           (\v -> invalidateCache >> M.continue (set typed (IssueView (IssuePage tl v)) o)) o
