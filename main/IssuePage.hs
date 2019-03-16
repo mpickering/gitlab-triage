@@ -9,6 +9,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 module IssuePage where
 
 import GitLab.Tickets
@@ -342,13 +343,15 @@ startMilestoneInput ip os =
 
       def = view (typed @IssueResp . field @"irMilestone") ip
 
-      place_with_def =
-        addDefault (typed @Updates . typed @EditIssue . field @"eiMilestone")
-                   def
+      place = (typed @Updates . typed @EditIssue . field @"eiMilestone")
+
+      start_val = fromMaybe def (view place ip)
+
   in M.continue
-      $ startDialog draw
+      $ startDialogWithDef draw
                  (checkMilestoneInput milestones)
-                 place_with_def
+                 place
+                 (Just start_val)
                  (map Just milestones)
                  ip os
 
@@ -362,12 +365,13 @@ startOwnerInput ip os =
       ac = view (typed @AppConfig) os
       def = view (typed @IssueResp . field @"irAssignees") ip
       place = (typed @Updates . typed @EditIssue . field @"eiAssignees")
-      place_with_def = addDefault place def
+      start_val = fromMaybe def (view place ip)
   in M.continue $
-        startDialogIO draw
+        startDialogIOWithDef draw
                    (fmap (fmap (:[])) . checkAuthor ac)
                    (\t _ -> map (:[]) <$> restrictAuthor ac t users)
-                   place_with_def
+                   place
+                   (Just start_val)
                    (map (:[]) users)
                    ip os
 

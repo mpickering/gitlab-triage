@@ -291,7 +291,3 @@ formatFooterMode m = case m of
                        FGoto {}   -> "g: "
                        FGen h _ _ -> h <> ": "
 
-addDefault :: ALens s s (Maybe a) (Maybe a) -> a -> ALens s s (Maybe a) (Maybe a)
-addDefault l d =
-  lens (\s -> maybe (Just d) Just (view (cloneLens l) s)) (\s a -> set (cloneLens l) a s)
-

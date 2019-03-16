@@ -101,9 +101,22 @@ startDialogIO :: SelectDialog s
             -> OperationalState
             -> OperationalState
 startDialogIO draw check restrict place ini s =
+  startDialogIOWithDef draw check restrict (cloneLens place) (view (cloneLens place) s) ini s
+
+startDialogIOWithDef :: SelectDialog s
+            => (a -> T.Text)
+            -> (T.Text -> IO (Maybe a))
+            -> (T.Text -> [a] -> IO [a])
+            -> ASetter s s (Maybe a) (Maybe a)
+            -> Maybe a
+            -> [a]
+            -> s
+            -> OperationalState
+            -> OperationalState
+startDialogIOWithDef draw check restrict place ini_inp ini s =
                                startDialogX False draw check restrict
-                                            (cloneLens place . unsafeIso)
-                                            (view (cloneLens place . unsafeIso) s)
+                                            (cloneSetter place . unsafeIso)
+                                            (maybeToList ini_inp)
                                             ini
                                             s
   where
@@ -136,3 +149,15 @@ startDialog :: SelectDialog s
             -> OperationalState
 startDialog draw check =
   startDialogIO draw (return . check) (pureRestrict draw)
+
+startDialogWithDef :: SelectDialog s
+            => (a -> T.Text)
+            -> (T.Text -> Maybe a)
+            -> ASetter s s (Maybe a) (Maybe a)
+            -> Maybe a
+            -> [a]
+            -> s
+            -> OperationalState
+            -> OperationalState
+startDialogWithDef draw check =
+  startDialogIOWithDef draw (return . check) (pureRestrict draw)
