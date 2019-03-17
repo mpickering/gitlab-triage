@@ -167,7 +167,19 @@ data GetIssuesParams
       , gipAssignee :: Maybe AssigneeParam
       , gipWeight :: Maybe Int
       , gipSearch :: Maybe Text
+      , gipSort :: Maybe Sort
+      , gipOrder :: Maybe Order
       } deriving (Generic, Show)
+
+type Sort = AscDesc
+
+data Order = Created | Updated deriving (Generic, Show)
+
+instance ToHttpApiData Order where
+  toQueryParam Created = "created_at"
+  toQueryParam Updated = "updated_at"
+  toUrlPiece Created = "created_at"
+  toUrlPiece Updated = "updated_at"
 
 defaultSearchParams :: GetIssuesParams
 defaultSearchParams =
@@ -176,6 +188,8 @@ defaultSearchParams =
     Nothing
     Nothing
     (Just AllScope)
+    Nothing
+    Nothing
     Nothing
     Nothing
     Nothing
@@ -241,6 +255,8 @@ type GetIssueAPI =
     :> QueryParam "assignee_id" AssigneeParam
     :> QueryParam "weight" Int
     :> QueryParam "search" Text
+    :> QueryParam "order_by" Order
+    :> QueryParam "sort" Sort
     :> QueryParam "page" Int
     :> QueryParam "per_page" Int
     :> Get '[JSON] ((Headers '[Header "X-Total-Pages" Int
@@ -272,6 +288,8 @@ getIssues GetIssuesParams{..} mb_page tok prj = do
       gipAssignee
       gipWeight
       gipSearch
+      gipOrder
+      gipSort
       mb_page
       (Just 100)
   let hs = getHeaders res
@@ -459,7 +477,7 @@ createIssueNote tok sudo prj iis cin =
 ----------------------------------------------------------------------
 
 data AscDesc = Desc | Asc
-  deriving (Ord, Eq, Enum, Bounded)
+  deriving (Ord, Eq, Enum, Bounded, Show)
 
 instance ToHttpApiData AscDesc where
   toQueryParam Asc = "asc"
