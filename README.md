@@ -15,12 +15,50 @@ Features
 <img src="https://i.imgur.com/16U6sqi.png" width=50%>
 <img src="https://i.imgur.com/p10H3am.png" width=50%>
 
+# Key bindings
+
+## Ticket List
+
+|Key  | Definition                 |
+|-----|----------------------------|
+| C-q | Quit                       |
+| g   | Goto Ticket                |
+| s   | Search by open/closed      |
+| c   | Search by ticket scope     |
+| l   | Search by label            |
+| m   | Search by milestone        |
+| a   | Search by author           |
+| o   | Search by owner            |
+| w   | Search by weight           |
+| /   | Search by keyword          |
+| C-o | Toggle Asc/Desc            |
+| C-s | Toggle CreatedAt/UpdatedAt |
+
+## Ticket Page
+
+|Key  | Definition                 |
+|-----|----------------------------|
+| ESC | Return to Ticket List      |
+| g   | Goto Ticket                |
+| F10 | Commit ticket changes      |
+| s   | Toggle Open/Close Status   |
+| t   | Modify title               |
+| l   | Modify labels              |
+| m   | Modify milestone           |
+| o   | Modify owner               |
+| w   | Modify weight              |
+| c   | Add a new comment          |
+| d   | Modify description         |
+| v   | View currently selected comment |
+| n   | Move to next issue         |
+| p   | Move to previous issue     |
+
+
+
 # Building
 
-The only tested configuration is with nix, installation with cabal and stack
-will be supported in the future.
+The only tested configuration is with cabal new-build with GHC-8.6.4 and cabal-install-2.4.0.0.
 
 ```
-nix-shell
-cabal run
+cabal new-run
 ```
