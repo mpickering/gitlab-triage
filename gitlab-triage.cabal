@@ -3,8 +3,8 @@
 
 name:                gitlab-triage
 version:             0.1.0.0
--- synopsis:
--- description:
+synopsis:            GitLab ticket viewer
+description:         TUI for viewing and editing GitLab tickets
 license:             BSD3
 license-file:        LICENSE
 author:              Matthew Pickering
