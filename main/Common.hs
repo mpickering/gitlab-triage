@@ -141,7 +141,6 @@ runQueryPaginate :: forall a . AppConfig
                  -> ExceptT ClientError IO (IOList.IOList a)
 runQueryPaginate ac q = do
   (hs, inis) <- ExceptT $ runClientM (q Nothing tok project') reqEnv'
-  liftIO (print hs)
   let io_list =
         case next_page hs of
           Nothing -> IOList.nil
