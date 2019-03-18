@@ -101,5 +101,5 @@ data DialogMode where
 data AppConfig = AppConfig {
                     userConfig :: UserConfig
                   , reqEnv :: ClientEnv
-                  , cache :: MCache HTTP.Request (Either ServantError Response)
+                  , cache :: MCache HTTP.Request (Either ClientError Response)
                   } deriving Generic

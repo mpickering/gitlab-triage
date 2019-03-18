@@ -36,8 +36,8 @@ executable gitlab-triage
                      , http-client-tls
                      , http-types
                      , text
-                     , servant
-                     , servant-client
+                     , servant >= 0.16
+                     , servant-client >= 0.16
                      , connection
                      , data-default
                      , brick >= 0.40

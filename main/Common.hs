@@ -7,7 +7,7 @@ module Common where
 
 import qualified Servant.Client.Internal.HttpClient as I
 import qualified Network.HTTP.Client                as HTTP
-import Servant.Client.Core.Internal.Request
+import Servant.Client.Core.Request
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
@@ -49,21 +49,20 @@ toClientM c = iterM alg c
   where
     alg :: ClientF (H.ClientM a) -> H.ClientM a
     alg (Throw err) = throwError err
-    alg (StreamingRequest {}) = error "streaming"
     alg (RunRequest req k) =
       (I.performRequest req ) >>= k
 
-runClientM :: ClientM a -> H.ClientEnv -> IO (Either ServantError a)
+runClientM :: ClientM a -> H.ClientEnv -> IO (Either ClientError a)
 runClientM = H.runClientM . toClientM
 
 runClientWithCache ::
-                    MCache HTTP.Request (Either ServantError Response)
+                    MCache HTTP.Request (Either ClientError Response)
                     -> ClientM a
                     -> H.ClientEnv
-                    -> IO (Either ServantError a)
+                    -> IO (Either ClientError a)
 runClientWithCache mcache c e = iterM alg (fmap Right c)
   where
-    alg :: ClientF (IO (Either ServantError a)) -> IO (Either ServantError a)
+    alg :: ClientF (IO (Either ClientError a)) -> IO (Either ClientError a)
     alg (RunRequest req k) = do
       -- We convert it because this version has a Show instance..
       let req' = I.requestToClientRequest (H.baseUrl e) req
@@ -77,7 +76,6 @@ runClientWithCache mcache c e = iterM alg (fmap Right c)
         Left err -> return (Left err)
         Right v  -> k v
     alg (Throw err) = (return (Left err))
-    alg (StreamingRequest {}) = error "streaming"
 
 instance Ord (HTTP.Request) where
   compare t1 t2 = compare (show t1) (show t2)
@@ -131,7 +129,7 @@ continue :: k -> ReaderT AppConfig (T.EventM Name) (T.Next k)
 continue = lift . M.continue
 
 runQuery :: AppConfig -> (AccessToken -> ProjectId -> ClientM a)
-         -> ExceptT ServantError IO a
+         -> ExceptT ClientError IO a
 runQuery l q = do
   let tok   = view (field @"userConfig" . field @"token") l
       reqEnv'  = view (field @"reqEnv") l
@@ -142,7 +140,7 @@ runQuery l q = do
 runQueryPaginate :: forall a . AppConfig
                  -> (Maybe Int -> AccessToken -> ProjectId
                                               -> ClientM (GetIssueHeaders, [a]))
-                 -> ExceptT ServantError IO (IOList.IOList a)
+                 -> ExceptT ClientError IO (IOList.IOList a)
 runQueryPaginate ac q = do
   (hs, inis) <- ExceptT $ runClientM (q Nothing tok project') reqEnv'
   liftIO (print hs)
@@ -171,7 +169,7 @@ runQueryPaginate ac q = do
 
 
 
-displayError :: ExceptT ServantError IO a
+displayError :: ExceptT ClientError IO a
              -> (a -> T.EventM n (T.Next OperationalState))
              -> OperationalState ->  T.EventM n (T.Next OperationalState)
 displayError act k o = do
@@ -186,13 +184,13 @@ issueView l n = set (field @"mode") (IssueView n) l
 {- Running external queries -}
 
 
-loadByIid :: IssueIid -> AppConfig -> ExceptT ServantError IO (IssueResp, IssuePageContents)
+loadByIid :: IssueIid -> AppConfig -> ExceptT ClientError IO (IssueResp, IssuePageContents)
 loadByIid iid ac = do
   r <- runQuery ac (getOneIssue iid)
   ipc <- loadByIssueResp r ac
   return (r, ipc)
 
-loadByIssueResp :: IssueResp -> AppConfig -> ExceptT ServantError IO (IssuePageContents)
+loadByIssueResp :: IssueResp -> AppConfig -> ExceptT ClientError IO (IssuePageContents)
 loadByIssueResp t l = do
   let iid = view (field @"irIid") t
   es_n <- runQuery l (\t' p -> listIssueNotes t' Nothing p iid)
@@ -225,10 +223,10 @@ initialise c = do
   return $ AppState mm
 
 -- Used when we can't recover
-unsafeEither :: IO (Either ServantError a) -> IO a
+unsafeEither :: IO (Either ClientError a) -> IO a
 unsafeEither act = either (error . show) id <$> act
 
-defaultEither :: a -> ExceptT ServantError IO a -> IO a
+defaultEither :: a -> ExceptT ClientError IO a -> IO a
 defaultEither d act = do
   v <- runExceptT act
   case v of
