@@ -30,13 +30,13 @@ lookupOrInsertCache :: (Ord k, Hashable k) => k
                                            -> IO v
 lookupOrInsertCache key act cache = do
   modifyMVar cache (\(Cache t q) -> do
-    time <- round `fmap` getPOSIXTime
+    -- time <- round `fmap` getPOSIXTime
     case lookup key q of
       Nothing -> do
         v <- act
         time <- round `fmap` getPOSIXTime
         return ((Cache t (insert key time v q), v))
-      Just (p, v) -> do
+      Just (_p, v) -> do
         return ((Cache t q), v))
 
 insertCache :: (Ord k, Hashable k) => k -> v -> MCache k v -> IO ()

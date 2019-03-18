@@ -11,7 +11,7 @@ import Servant.Client.Core.Request
 import Network.HTTP.Client.TLS as TLS
 import Network.Connection (TLSSettings(..))
 import Data.Default
-import Control.Lens ( to, firstOf, lens)
+import Control.Lens ( to )
 
 import Control.Monad.Reader
 import qualified Brick.Main as M
@@ -21,7 +21,6 @@ import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import Brick
 import qualified IOList
-import qualified Data.Set as S
 
 import Servant.Client.Free
 import qualified Servant.Client as H
@@ -41,7 +40,6 @@ import Control.Monad.Free
 import Control.Monad.Error.Class
 
 import Data.Hashable
-import Data.Maybe
 
 
 toClientM :: ClientM a -> H.ClientM a
@@ -267,9 +265,11 @@ restrictAuthor ac t _ =
   defaultEither [] $ runQuery ac
                               (\tok _ -> getUsers Nothing (Just t) tok)
 
+{- No GitLab API method
 restrictLabel :: AppConfig -> T.Text -> [LabelParam] -> IO [LabelParam]
 restrictLabel _ "" us = return us
 restrictLabel ac t us =  return us
+-}
 --  defaultEither [] $ runQuery ac (\tok _ -> getL
 
 

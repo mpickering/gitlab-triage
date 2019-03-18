@@ -16,7 +16,6 @@ import Servant.Client
 import Autocomplete
 import Control.Lens (ALens, ASetter)
 import Data.Text (Text)
-import Data.List.NonEmpty
 
 import qualified IOList
 import Cache

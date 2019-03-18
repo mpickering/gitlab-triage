@@ -39,7 +39,6 @@ import Control.Monad.IO.Class (liftIO)
 import Cursor.Text
 
 import Control.Applicative.Combinators ()
-import Data.List.NonEmpty
 import Data.Maybe
 
 import Config
@@ -225,6 +224,7 @@ dispatchDialogInput (SearchParamsDialog check place mac) l = do
       tl <- liftIO $ loadTicketList search_params (view (typed @AppConfig) new_state)
       M.continue (set typed (TicketListView tl) new_state)
 dispatchDialogInput NoDialog _ = error "NoDialog when handling dialog event"
+dispatchDialogInput (InfoDialog {}) l = M.continue (resetDialog l)
 
 
 
@@ -240,7 +240,7 @@ inputFooterHandler :: FooterInputMode
                    -> TextCursor
                    -> Handler OperationalState
                    -> Handler OperationalState
-inputFooterHandler m tc k l re@(T.VtyEvent e) =
+inputFooterHandler m tc _k l re@(T.VtyEvent e) =
   case e of
     V.EvKey V.KEsc [] -> M.continue (resetFooter l)
     V.EvKey V.KEnter [] -> dispatchFooterInput m tc l

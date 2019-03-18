@@ -20,12 +20,10 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, set, ALens, cloneLens, iso, to)
+import Control.Lens (view, set, iso, to)
 import Control.Monad (void)
 import Data.Maybe (fromMaybe, catMaybes)
 import qualified Graphics.Vty as V
-import Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as N
 
 import qualified Brick.Main as M
 import qualified Brick.Types as T
@@ -44,12 +42,10 @@ import Control.Applicative.Combinators ()
 import Control.Monad.Reader
 
 import qualified Data.Set as S
-import qualified Data.Foldable as F
 
 import Data.List
 
 import Model
-import Autocomplete
 import Common
 import TextCursor
 import Parsers
@@ -287,7 +283,7 @@ viewComment ip o =
       el    = L.listSelectedElement notes
   in case el of
        Nothing -> M.continue o
-       Just (k, note) ->
+       Just (_, note) ->
 
         let info = view (field @"inrBody") note
         in M.continue (set typed (InfoDialog info) o)
@@ -295,7 +291,7 @@ viewComment ip o =
 ticketListEvent :: (IOList.IOListWidget Name IssueResp -> IO (IOList.IOListWidget Name IssueResp))
                   -> IssuePage -> OperationalState
                                   -> EventM Name (Next OperationalState)
-ticketListEvent f (IssuePage tl ps) s =  do
+ticketListEvent f (IssuePage tl _ps) s =  do
   let is = view (field @"issues") tl
   is' <- liftIO $ f is
   let tl' = set (field @"issues") is' tl
@@ -326,13 +322,13 @@ startLabelInput tl l =
 
       place = (typed @Updates . typed @EditIssue . field @"eiLabels" . labelsIso)
 
-  in M.continue $ startMultiDialogIO
+  in M.continue $ startMultiDialogIO @IssuePageContents
                     txtLabels
                     (return . checkLabel)
                     (pureRestrict txtLabels)
                     place
                     cur_labels_t
-                    ls tl l
+                    ls l
   where
     splitLabels :: Maybe Labels -> [T.Text]
     splitLabels Nothing = []
@@ -384,12 +380,12 @@ startMilestoneInput ip os =
       start_val = fromMaybe def (view place ip)
 
   in M.continue
-      $ startDialogWithDef draw
+      $ startDialogWithDef @IssuePageContents draw
                  (checkMilestoneInput milestones)
                  place
                  (Just start_val)
                  (map Just milestones)
-                 ip os
+                 os
 
 
 startOwnerInput :: IssuePageContents
@@ -403,13 +399,13 @@ startOwnerInput ip os =
       place = (typed @Updates . typed @EditIssue . field @"eiAssignees")
       start_val = fromMaybe def (view place ip)
   in M.continue $
-        startDialogIOWithDef draw
+        startDialogIOWithDef @IssuePageContents draw
                    (fmap (fmap (:[])) . checkAuthor ac)
                    (\t _ -> map (:[]) <$> restrictAuthor ac t users)
                    place
                    (Just start_val)
                    (map (:[]) users)
-                   ip os
+                   os
 
 
 applyChanges :: IssuePage -> OperationalState -> EventM Name (Next OperationalState)

@@ -16,14 +16,12 @@ import GitLab.Users
 import GitLab.Common
 
 import Data.List.NonEmpty (NonEmpty(..))
-import Data.Maybe
-import Data.Semigroup ( sconcat )
 
 import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, ALens,  to, set, cloneLens, Iso, iso, over)
+import Control.Lens (view, to, set, Iso, iso, over)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -44,15 +42,11 @@ import Text.Megaparsec.Char.Lexer (decimal)
 import qualified Data.Set as S
 
 import Model
-import Autocomplete
 import Common
-import Parsers
 import Dialog
 import Data.Semigroup.Foldable
 
 import TextCursor
-
-import Debug.Trace
 
 ticketListHandler :: TicketList -> Handler OperationalState
 ticketListHandler tl l (T.VtyEvent e) =
@@ -81,8 +75,8 @@ toggleOrder tl l = do
       search_params = over (typed @Sort) toggle old_search_params
       toggle Asc = Desc
       toggle Desc = Asc
-  tl <- loadTicketList search_params (view (typed @AppConfig) l)
-  return $ set typed (TicketListView tl) l
+  tl' <- loadTicketList search_params (view (typed @AppConfig) l)
+  return $ set typed (TicketListView tl') l
 
 toggleSort :: TicketList -> OperationalState -> IO OperationalState
 toggleSort tl l = do
@@ -90,8 +84,8 @@ toggleSort tl l = do
       search_params = over (typed @Order) toggle old_search_params
       toggle Created = Updated
       toggle Updated = Created
-  tl <- loadTicketList search_params (view (typed @AppConfig) l)
-  return $ set typed (TicketListView tl) l
+  tl' <- loadTicketList search_params (view (typed @AppConfig) l)
+  return $ set typed (TicketListView tl') l
 
 startScopeDialog, startLabelDialog,
   startMilestoneDialog, startAuthorDialog,
@@ -115,17 +109,18 @@ startScopeDialog =
 data LabelOption = NoneOption | AnyOption | LabelOption T.Text
 
 startLabelDialog tl l =
-  startMultiDialogIO txtLabelOption
+  startMultiDialogIO @TicketList
+                     txtLabelOption
                      (return . checkLabel)
                      (pureRestrict txtLabelOption)
                      (field @"params" . field @"gipLabels" . paramIso)
                      (view (field @"params" . field @"gipLabels" . paramIso) tl)
-                     ([NoneOption, AnyOption] ++ ls) tl l
+                     ([NoneOption, AnyOption] ++ ls) l
   where
     toOptions :: LabelParam -> [LabelOption]
     toOptions NoLabels = [NoneOption]
     toOptions AnyLabel = [AnyOption]
-    toOptions (WithLabels (Labels ls)) = map LabelOption (S.toList ls)
+    toOptions (WithLabels (Labels labs)) = map LabelOption (S.toList labs)
 
     fromOptions :: LabelOption -> LabelParam
     fromOptions NoneOption = NoLabels
@@ -146,7 +141,7 @@ startLabelDialog tl l =
       case (T.toLower t) of
         "none" -> Just NoneOption
         "any"  -> Just AnyOption
-        t     ->  Just (LabelOption t)
+        _      ->  Just (LabelOption t)
 
 startMilestoneDialog tl l =
   startDialog txtMilestoneParam checkMilestone (field @"params" . field @"gipMilestone")
@@ -314,12 +309,14 @@ txtScope AllScope = "All"
 drawScope :: ScopeParam -> Widget n
 drawScope = txt . txtScope
 
+txtLabelParam :: LabelParam -> T.Text
 txtLabelParam l =
   case l of
     WithLabels (Labels ts) -> T.intercalate ", " (S.toList ts)
     NoLabels -> "None"
     AnyLabel -> "Any"
 
+txtLabelOption :: LabelOption -> T.Text
 txtLabelOption l =
   case l of
     LabelOption t -> t

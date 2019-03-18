@@ -33,7 +33,6 @@ import Data.Generics.Product
 import Data.Generics.Sum
 import GHC.Generics
 import Control.Lens
-import Data.List.NonEmpty (NonEmpty(..))
 
 import Control.Monad.IO.Class (liftIO)
 
@@ -138,6 +137,7 @@ handleAutocompleteEvent ac (VtyEvent e) = do
               return $ set (field @"autocompleteCursor")
                            (newCursor (autocompleteToText ac a)) ac
         _ -> handleListAndCursorEvent ac (VtyEvent e)
+    _ -> return ac
 handleAutocompleteEvent ac _ = return ac
 
 safeInit :: [a] -> [a]

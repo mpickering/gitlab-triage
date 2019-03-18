@@ -30,7 +30,7 @@ executable gitlab-triage
                        ExternalEditor, SetupMode, IOList, Cache, Dialog
 
   -- other-extensions:
-  ghc-options: -threaded  -O2
+  ghc-options: -threaded  -O2 -Wall
   build-depends:       base >=4.11
                      , gitlab-servant
                      , http-client-tls

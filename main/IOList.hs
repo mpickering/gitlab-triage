@@ -47,8 +47,6 @@ import Prelude hiding (reverse, splitAt)
 
 import Control.Monad.Trans.State (evalState, get, put)
 
-import Control.Monad
-
 import Control.Lens hiding (List, imap, uncons, cons)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
@@ -191,10 +189,10 @@ verify (IOList n e) = verify' n e
 verify' :: Int -> IOListL e -> IO (Maybe String)
 verify' n ILNil = return $ if n == 0 then Nothing else (Just "Nil not length 0")
 verify' n (ILCons _ (IOList n' l)) =
-  if n == n' + 1 then verify' n' l else return (Just (show ("cons", n, n')))
+  if n == n' + 1 then verify' n' l else return (Just (show ("cons" :: String, n, n')))
 verify' n (ILLoad act) = do
   (IOList n' l) <- act
-  if n == n' then verify' n' l else return (Just (show ("load", n, n')))
+  if n == n' then verify' n' l else return (Just (show ("load" :: String, n, n')))
 
 -- | Handle events for list cursor movement.  Events handled are:
 --
@@ -374,11 +372,6 @@ listReplaceCursor ::
            -> IO (IOListWidget n e)
 listReplaceCursor e l | Just pos <- view listSelectedL l = do
     let es = l^.listElementsL
-        newSel = case l^.listSelectedL of
-            Nothing -> 0
-            Just s -> if pos <= s
-                      then s + 1
-                      else s
     (front, back) <- splitAt pos es
     back' <- IOList.tail back
     let new = concatILPure front (cons e back')
