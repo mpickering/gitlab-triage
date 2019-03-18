@@ -23,7 +23,7 @@ import qualified Data.Text as T
 
 import Brick hiding (continue, halt)
 
-import Control.Lens (view, ALens,  to, set, cloneLens, Iso, iso)
+import Control.Lens (view, ALens,  to, set, cloneLens, Iso, iso, over)
 import qualified Graphics.Vty as V
 
 import qualified Brick.Main as M
@@ -67,11 +67,31 @@ ticketListHandler tl l (T.VtyEvent e) =
     V.EvKey (V.KChar 'o') [] -> M.continue (startOwnerDialog tl l)
     V.EvKey (V.KChar 'w') [] -> M.continue (startWeightDialog tl l)
     V.EvKey (V.KChar '/') [] -> M.continue (startSearchDialog tl l)
+    V.EvKey (V.KChar 'o') [V.MCtrl] -> M.continue =<< (liftIO $ toggleOrder tl l)
+    V.EvKey (V.KChar 's') [V.MCtrl] -> M.continue =<< (liftIO $ toggleSort tl l)
     _ -> do
       res <- L.handleListEvent e (view typed tl)
       let tl' = set (field @"issues") res tl
       M.continue (set typed (TicketListView tl') l)
 ticketListHandler _ l _ = M.continue l
+
+toggleOrder :: TicketList -> OperationalState -> IO OperationalState
+toggleOrder tl l = do
+  let old_search_params = view (field  @"params") tl
+      search_params = over (typed @Sort) toggle old_search_params
+      toggle Asc = Desc
+      toggle Desc = Asc
+  tl <- loadTicketList search_params (view (typed @AppConfig) l)
+  return $ set typed (TicketListView tl) l
+
+toggleSort :: TicketList -> OperationalState -> IO OperationalState
+toggleSort tl l = do
+  let old_search_params = view (field @"params") tl
+      search_params = over (typed @Order) toggle old_search_params
+      toggle Created = Updated
+      toggle Updated = Created
+  tl <- loadTicketList search_params (view (typed @AppConfig) l)
+  return $ set typed (TicketListView tl) l
 
 startScopeDialog, startLabelDialog,
   startMilestoneDialog, startAuthorDialog,
@@ -229,7 +249,19 @@ drawTicketList l tl = [ui]
       FooterInput fim t -> txt (formatFooterMode fim) <+> drawTextCursor t
       _ -> txt "g - goto ticket; C-q - quit"
 
-    total = str $ show $ L.lengthIL $ view L.listElementsL issues
+    total = (str $ show $ L.lengthIL $ view L.listElementsL issues)
+            <+> drawSearchKeys
+
+    drawSearchKeys = hBox [str "(", drawOrder (view (typed @Sort) params)
+                                  , str ","
+                                  , drawKey (view (typed @Order) params)
+                                  , str ")" ]
+
+    drawOrder Desc = str "↓"
+    drawOrder Asc = str "↑"
+
+    drawKey Created = str "C"
+    drawKey Updated = str "U"
 
     box = B.borderWithLabel total . vBox $ [
             L.renderList drawTicketRow True issues

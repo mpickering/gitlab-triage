@@ -167,8 +167,8 @@ data GetIssuesParams
       , gipAssignee :: Maybe AssigneeParam
       , gipWeight :: Maybe Int
       , gipSearch :: Maybe Text
-      , gipSort :: Maybe Sort
-      , gipOrder :: Maybe Order
+      , gipSort :: Sort
+      , gipOrder :: Order
       } deriving (Generic, Show)
 
 type Sort = AscDesc
@@ -192,8 +192,8 @@ defaultSearchParams =
     Nothing
     Nothing
     Nothing
-    Nothing
-    Nothing
+    Desc
+    Created
 
 
 data StateParam = Open | Closed deriving (Generic, Show)
@@ -288,8 +288,8 @@ getIssues GetIssuesParams{..} mb_page tok prj = do
       gipAssignee
       gipWeight
       gipSearch
-      gipOrder
-      gipSort
+      (Just gipOrder)
+      (Just gipSort)
       mb_page
       (Just 100)
   let hs = getHeaders res
