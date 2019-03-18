@@ -398,9 +398,13 @@ startOwnerInput ip os =
       def = view (typed @IssueResp . field @"irAssignees") ip
       place = (typed @Updates . typed @EditIssue . field @"eiAssignees")
       start_val = fromMaybe def (view place ip)
+
+      -- Empty means unassign
+      check_author "" = return $ Just []
+      check_author t = fmap (:[]) <$> (checkAuthor ac t)
   in M.continue $
         startDialogIOWithDef @IssuePageContents draw
-                   (fmap (fmap (:[])) . checkAuthor ac)
+                   (check_author)
                    (\t _ -> map (:[]) <$> restrictAuthor ac t users)
                    place
                    (Just start_val)

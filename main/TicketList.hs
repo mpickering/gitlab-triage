@@ -244,8 +244,12 @@ drawTicketList l tl = [ui]
       FooterInput fim t -> txt (formatFooterMode fim) <+> drawTextCursor t
       _ -> txt "g - goto ticket; C-q - quit"
 
-    total = (str $ show $ L.lengthIL $ view L.listElementsL issues)
-            <+> drawSearchKeys
+    kAndL = L.curAndLen issues
+    numbers = case kAndL of
+                Just (k,len) -> hBox [int (k + 1), str "/", int len]
+                Nothing -> emptyWidget
+
+    total = numbers <+> drawSearchKeys
 
     drawSearchKeys = hBox [str "(", drawOrder (view (typed @Sort) params)
                                   , str ","
