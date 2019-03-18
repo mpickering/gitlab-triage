@@ -1,8 +1,9 @@
 let
   np = import <nixpkgs> {};
 in
-  np.mkShell { buildInputs = [ np.haskell.packages.ghc862.ghc
-                               np.haskell.packages.ghc862.cabal-install
+  np.mkShell { buildInputs = [ np.haskell.packages.ghc864.ghc
+                               np.haskell.packages.ghc864.cabal-install
+
                                np.icdiff
                                np.gist
                                np.zlib
