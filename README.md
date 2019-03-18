@@ -12,8 +12,8 @@ Features
 
 # Screenshots
 
-<img src="https://i.imgur.com/16U6sqi.png" width=50%>
-<img src="https://i.imgur.com/p10H3am.png" width=50%>
+<img src="https://i.imgur.com/JadwBu1.png" width=50%>
+<img src="https://i.imgur.com/akYz7F9.png" width=50%>
 
 # Key bindings
 
