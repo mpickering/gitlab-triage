@@ -13,7 +13,7 @@ maintainer:          matthewtpickering@gmail.com
 category:            Development
 build-type:          Simple
 extra-source-files:  ChangeLog.md
-cabal-version:       >=2.0
+cabal-version:       2.0
 tested-with:         GHC==8.6.4
 
 executable gitlab-triage
