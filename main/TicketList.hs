@@ -63,11 +63,18 @@ ticketListHandler tl l (T.VtyEvent e) =
     V.EvKey (V.KChar '/') [] -> M.continue (startSearchDialog tl l)
     V.EvKey (V.KChar 'o') [V.MCtrl] -> M.continue =<< (liftIO $ toggleOrder tl l)
     V.EvKey (V.KChar 's') [V.MCtrl] -> M.continue =<< (liftIO $ toggleSort tl l)
+    V.EvKey (V.KChar 'r') [] -> M.continue =<< (liftIO $ reload tl l)
     _ -> do
       res <- L.handleListEvent e (view typed tl)
       let tl' = set (field @"issues") res tl
       M.continue (set typed (TicketListView tl') l)
 ticketListHandler _ l _ = M.continue l
+
+reload :: TicketList -> OperationalState -> IO OperationalState
+reload tl l = do
+  let search_params = view (field  @"params") tl
+  tl' <- loadTicketList search_params (view (typed @AppConfig) l)
+  return $ set typed (TicketListView tl') l
 
 toggleOrder :: TicketList -> OperationalState -> IO OperationalState
 toggleOrder tl l = do
