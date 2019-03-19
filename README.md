@@ -23,6 +23,7 @@ Features
 |-----|----------------------------|
 | C-q | Quit                       |
 | g   | Goto Ticket                |
+| r   | Refresh                    |
 | s   | Search by open/closed      |
 | c   | Search by ticket scope     |
 | l   | Search by label            |
